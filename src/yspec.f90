@@ -68,13 +68,39 @@ program yspec
   complex(dpc), dimension(:,:), allocatable :: phi_coef            !
   complex(dpc), dimension(:,:), allocatable :: phi_coef_time       !
   !----------------------------------------------------------------!
-  
+
+  character(len=:), allocatable :: ofile
+  character(len=:), allocatable :: mfile
+
 
   !--------------------------------------------------!
   !      set up the normalization parameters         !
   !--------------------------------------------------!
   call set_parameters
 
+
+  !--------------------------------------------------!
+  !       deal with the command line arguments       !
+  !--------------------------------------------------!
+  
+  if(.not.found_command_argument("-ofile",ofile)) then
+     stop "-ofile is required input"
+  end if
+
+  if(.not.found_command_argument("-mfile",mfile)) then
+     stop "-mfile is required input"
+  else
+     inquire(file=trim(mfile), exist=ltmp)
+     if(.not.ltmp) stop "model file does not exist"
+  end if
+
+  
+
+  
+
+
+stop
+  
   !--------------------------------------------------!
   !          open and read parameter file            !
   !--------------------------------------------------!
@@ -466,14 +492,6 @@ program yspec
 
         ! dimensionalize the potential
         phi_coef_time = phi_coef_time*pot_norm
-
-        ! open the output file
-        call string_cat_int(trim(phi_coef_pref)//'.',l, & 
-             phi_coef_out)        
-        open(io3,file=trim(phi_coef_out),form='formatted')
-        
-        ! write out the coefficients
-
 
         ! undo the exponential decay
         do k=1,nt

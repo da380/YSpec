@@ -1,5 +1,7 @@
 module module_util
 
+  use nrtype
+  
   interface my_reallocate
      module procedure my_reallocate_iv,my_reallocate_ia,my_reallocate_rv, &
           my_reallocate_dv,my_reallocate_cv,my_reallocate_zv
@@ -11,8 +13,24 @@ module module_util
 
   interface get_float
      module procedure get_float_sp, get_float_dp
-  end interface
+  end interface get_float
 
+  interface count_columns
+     procedure :: count_columns,count_columns_opened
+  end interface count_columns
+
+
+  interface found_command_argument
+     procedure :: found_command_argument_character, &
+                  found_command_argument_integer,   &
+                  found_command_argument_real,      &
+                  found_command_argument_logical,   &
+                  found_command_argument_flag 
+  end interface found_command_argument
+
+    ! default string length
+  integer(i4b), parameter :: max_string_length = 4096
+  
   contains
 
 
@@ -442,6 +460,221 @@ module module_util
       
       return
     end subroutine string_cat_int
+
+
+    !==============================================!
+    !                  IO routines                 !
+    !==============================================!
+  
+  function count_columns(file) result(ncol)
+    implicit none
+    character(len = *), intent(in) :: file
+    integer(i4b) :: ncol
+
+    character(len=:), allocatable :: line
+    integer(i4b) :: io,ios
+    real(dp), dimension(:), allocatable :: tmp
+    open(newunit = io,file = trim(file))
+    line = readline(io)
+    allocate(tmp(len(line)))
+    close(io)
+    ncol = 0
+    do
+       read(line,*,iostat = ios) tmp(1:ncol)
+       if(ios /= 0) exit
+       ncol = ncol + 1
+    end do 
+    ncol = ncol-1    
+    return
+  end function count_columns
+
+  function count_columns_opened(io) result(ncol)
+    implicit none
+    integer(i4b), intent(in) :: io
+    integer(i4b) :: ncol
+
+    logical :: ok
+    character(len=:), allocatable :: line
+    integer(i4b) :: ios
+    real(dp), dimension(:), allocatable :: tmp
+    line = readline(io)
+    allocate(tmp(len(line)))
+    backspace(io)
+    ncol = 0
+    do
+       read(line,*,iostat = ios) tmp(1:ncol)
+       if(ios /= 0) exit
+       ncol = ncol + 1
+    end do 
+    ncol = ncol-1
+    
+    return
+  end function count_columns_opened
+
+  
+  function readline(io) result(line)
+    implicit none
+    integer, intent(IN) :: io
+    character(len=:), allocatable :: line
+    integer, parameter :: buf_len= max_string_length
+    character(len=buf_len) :: buf
+    logical :: okay, set
+    integer status, size    
+    okay = .false.
+    set = .true.
+    do
+       read (io,'(a)',advance='NO',iostat=status, size=size) buf
+       okay = .not. IS_IOSTAT_END(status)
+       if (.not. okay) return
+       if (set) then
+          line = buf(1:size)
+          set=.false.
+       else
+          line = line // buf(1:size)
+       end if
+       if (IS_IOSTAT_EOR(status)) exit
+    end do
+  end function readline
+
+
+  !==============================================!
+  !             command line routines            !
+  !==============================================!
+
+  subroutine print_argument_info(nreq,ireq,dreq,nopt,iopt,dopt) 
+    integer(i4b), intent(in) :: nreq
+    character(len=*), dimension(nreq), intent(in) :: ireq
+    logical, dimension(nreq), intent(in) :: dreq
+    integer(i4b), intent(in), optional :: nopt
+    character(len=*), dimension(:), intent(in), optional :: iopt
+    logical, dimension(:), intent(in), optional :: dopt
+
+    integer(i4b) :: i,nc
+    
+    ! work out the minimum number of command line arguments
+    nc = 0
+    do i = 1,nreq
+       if(dreq(i)) then
+          nc = nc+2
+       else
+          nc = nc+1
+       end if
+    end do
+
+    if(command_argument_count() < nc) then
+       do i = 1,nreq
+          print *, trim(ireq(i))
+       end do
+       if(present(nopt) .and. present(iopt) .and. present(dopt)) then
+          do i = 1,nopt
+             print *, trim(iopt(i))
+          end do
+       end if
+       stop
+    end if
+  end subroutine print_argument_info
+
+  logical function found_command_argument_flag(tag) result(found)
+    character(len=*), intent(in) :: tag
+    character(len=max_string_length) :: rtag,string
+    integer(i4b) :: narg,iarg,jarg,ios
+    narg = command_argument_count()
+    found = .false.
+    do iarg = 1,narg
+       call get_command_argument(iarg,rtag)
+       if(trim(rtag) == tag) then
+          found = .true.          
+          return
+       end if
+    end do
+    return
+  end function found_command_argument_flag
+
+  
+  logical function found_command_argument_character(tag,val) result(found)
+    character(len=*), intent(in) :: tag
+    character(len=:), allocatable, intent(out) :: val
+    character(len=max_string_length) :: rtag,string
+    integer(i4b) :: narg,iarg,ios
+    narg = command_argument_count()
+    found = .false.
+    do iarg = 1,narg-1
+       call get_command_argument(iarg,rtag)
+       if(trim(rtag) == tag) then
+          call get_command_argument(iarg+1,string,status = ios)
+          if(ios /= 0) return
+          found = .true.
+          val = trim(string)         
+       end if
+    end do
+    return
+  end function found_command_argument_character
+
+  logical function found_command_argument_integer(tag,val) result(found)
+    character(len=*), intent(in) :: tag
+    integer(i4b), intent(out) :: val
+    character(len=max_string_length) :: rtag,string
+    integer(i4b) :: narg,iarg,jarg,ios
+    narg = command_argument_count()
+    found = .false.
+    do iarg = 1,narg-1
+       call get_command_argument(iarg,rtag)
+       if(trim(rtag) == tag) then
+          call get_command_argument(iarg+1,string,status = ios)
+          if(ios /= 0) return
+          read(string,*,iostat = ios) val
+          if(ios /= 0)  return
+          found = .true.
+          return
+       end if
+    end do
+    return
+  end function found_command_argument_integer
+
+
+  logical function found_command_argument_real(tag,val) result(found)
+    character(len=*), intent(in) :: tag
+    real(dp), intent(out) :: val
+    character(len=max_string_length) :: rtag,string
+    integer(i4b) :: narg,iarg,jarg,ios
+    narg = command_argument_count()
+    found = .false.
+    do iarg = 1,narg-1
+       call get_command_argument(iarg,rtag)
+       if(trim(rtag) == tag) then
+          call get_command_argument(iarg+1,string,status = ios)
+          if(ios /= 0) return
+          read(string,*,iostat = ios) val
+          if(ios /= 0)  return
+          found = .true.
+          return
+       end if
+    end do
+    return
+  end function found_command_argument_real
+
+
+  logical function found_command_argument_logical(tag,val) result(found)
+    character(len=*), intent(in) :: tag
+    logical, intent(out) :: val
+    character(len=max_string_length) :: rtag,string
+    integer(i4b) :: narg,iarg,jarg,ios
+    narg = command_argument_count()
+    found = .false.
+    do iarg = 1,narg-1
+       call get_command_argument(iarg,rtag)
+       if(trim(rtag) == tag) then
+          call get_command_argument(iarg+1,string,status = ios)
+          if(ios /= 0) return
+          read(string,*,iostat = ios) val
+          if(ios /= 0)  return
+          found = .true.
+          return
+       end if
+    end do
+    return
+  end function found_command_argument_logical
+  
 
 
 
