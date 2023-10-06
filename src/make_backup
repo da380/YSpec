@@ -1,7 +1,0 @@
-#
-
-cd ../
-tar -cf $1.tar src/
-gzip $1.tar
-mv $1.tar.gz ~/sr2/backup/.
-cd src/
