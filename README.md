@@ -89,19 +89,23 @@ cut-off of the calculations at the frequency `fmax`.
 - `source depth, latitude and longitude` – location of point source (depth in km, angles in de-
 grees).
 
-- `Mrr , . . . , Mpp` – moment tensor components $M_{rr} , . . . , M_{φφ}$ in Nm refered to the standard spherical
-polar co-ordinate system (r, θ, φ) defined relative to the pole of the model. So, locally the `r` direction
-is vertically upwards, the `θ` direction is south, and the `φ` direction is east.
+- `Mrr , . . . , Mpp` – moment tensor components $M_{rr} , . . . , M_{\phi}$ in Nm refered to the standard spherical
+polar co-ordinate system (r, θ, φ) defined relative to the pole of the model. So, locally the $r$ direction
+is vertically upwards, the $\theta$ direction is south, and the $\phi$ direction is east.
 
-16. receiver depth – depth of all the different receivers in km. Note that the receiver can be placed
-below the source.
-17. number of receivers – the total number of different receiver positions. Can be as large as you
+- `receiver depth` – depth of all the different receivers in km. Note that the receiver can be placed
+below the source. This depth cannot lie within a fluid part of the model.
+
+- `number of receivers` – the total number of different receiver positions. Can be as large as you
 like, but if too big the program can run out of memory and will crash. Computations for multiple
 receivers involves only slightly more work than those for one receiver, so having lots of different
 receivers is fine.
-18. receiver latitudes and longitudes – list of the different receiver latitudes and longitudes in
+
+- `receiver latitudes and longitudes` – list of the different receiver latitudes and longitudes in
 the form
-lat1 lon1
+
+`lat1 lon1
 lat2 lon2
-lat3 lon3
+lat3 lon3`
+
 with all angles being in degrees. The ordering of the output files corresponds to that of this list.
