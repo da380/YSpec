@@ -32,9 +32,9 @@ where `input.in` is the name of the parameter file. And example of such a file c
 
 A summary of the input parameters is as follows:
 
--  prefix for output files – a string used for labelling the outputs of the program. For exam-
-ple, if this string is yspec.out, then the output files will be yspec.out.1, yspec.out.2, . . . ,
-yspec.out.n, where n denotes the number of receivers, and the ordering of these files matches the
+-  `prefix for output files` – a string used for labelling the outputs of the program. For exam-
+ple, if this string is `yspec.out`, then the output files will be `yspec.out.1`, `yspec.out.2`, . . . ,
+`yspec.out.n`, where `n` denotes the number of receivers, and the ordering of these files matches the
 input order of the receivers (see below).
 
 
