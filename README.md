@@ -89,7 +89,7 @@ cut-off of the calculations at the frequency `fmax`.
 - `source depth, latitude and longitude` – location of point source (depth in km, angles in de-
 grees).
 
-- `Mrr , . . . , Mpp` – moment tensor components `M_{rr} , . . . , M_{φφ}` in Nm refered to the standard spherical
+- `Mrr , . . . , Mpp` – moment tensor components $M_{rr} , . . . , M_{φφ}$ in Nm refered to the standard spherical
 polar co-ordinate system (r, θ, φ) defined relative to the pole of the model. So, locally the `r` direction
 is vertically upwards, the `θ` direction is south, and the `φ` direction is east.
 
