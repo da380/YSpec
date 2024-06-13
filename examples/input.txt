@@ -23,13 +23,13 @@
   0
 
 # lmax
-  800
+  600
 
 # fmin (mHz) (this should always be greater than 0)
   0.2
 
 # fmax (mHz)
-  60
+  40
   
 #  length of  time series (min)
   60
