@@ -107,3 +107,17 @@ the form
 `lat1 lon1`
 
 with all angles being in degrees. The ordering of the output files corresponds to that of this list.
+
+## Outputs
+
+For each receiver is output an ascii file containing the three desired three component seismogram. The
+format is:
+
+`time   vertical-component   north-component   east-component`
+
+where all outputs are in SI units, and the form of the seismogram (displacement, velocity, or acceler-
+ation) is determined by parameter 5 described above.
+
+
+
+
