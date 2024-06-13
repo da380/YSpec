@@ -105,7 +105,5 @@ receivers is fine.
 the form
 
 `lat1 lon1`
-`lat2 lon2`
-`lat3 lon3`
 
 with all angles being in degrees. The ordering of the output files corresponds to that of this list.
