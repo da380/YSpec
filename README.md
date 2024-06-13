@@ -6,4 +6,16 @@ direct radial integration method introduced by Friedrich & Dalkolmo (1995), and 
 
 ## Installation
 
-Building with `CMake` is recommended. 
+Clone the repository:
+
+`git clone https://github.com/da380/YSpec.git`
+
+Configure the build:
+
+`cmake -S YSpec -B YSpecBuild -DCMAKE_BUILD_TYPE=Release`
+
+Compile the code:
+
+`cmake --build YSpecBuild`
+
+
