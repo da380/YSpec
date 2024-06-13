@@ -64,9 +64,7 @@ program yspec
   complex(dpc), dimension(2,2) :: s2tmp,ytor,yrad,prad             !
   complex(dpc), dimension(4,4) :: s4tmp,ysphng                     !
   complex(dpc), dimension(6,4) :: s6tmp,ysph                       !
-  complex(dpc), dimension(:,:), allocatable :: ur,ut,up,phi        !
-  complex(dpc), dimension(:,:), allocatable :: phi_coef            !
-  complex(dpc), dimension(:,:), allocatable :: phi_coef_time       !
+  complex(dpc), dimension(:,:), allocatable :: ur,ut,up            !
   !----------------------------------------------------------------!
 
   character(len=:), allocatable :: ofile
@@ -141,12 +139,7 @@ stop
   call read_float(io1,f22,2)
 
 
-  !===================================================!
-  ! set the value of this switch internally
-  ! set this equal to zero to NOT output phi 
-  ! coefficient files
-  phi_coef_switch = 0
-  !===================================================!
+  
 
   !  read source parameters
   call read_float(io1,rs,2)
@@ -252,16 +245,11 @@ stop
   !----------------------------------------------------!
 
   ! initialize displacement vector components
-  allocate(ur(nw,nr),ut(nw,nr),up(nw,nr),phi(nw,nr))
+  allocate(ur(nw,nr),ut(nw,nr),up(nw,nr))
   ur = 0.0_dp
   ut = 0.0_dp
   up = 0.0_dp
-  phi = 0.0_dp
-
-
-  ! allocate the phi coefficient vectors
-  allocate(phi_coef(nw,5))
-  allocate(phi_coef_time(nt,5))
+  
 
 
   ! set up dummy source vectors
@@ -283,7 +271,6 @@ stop
 
   ! set the attenuation 
   call set_ats_switch(ats_in) 
-
 
 
   ! start loop over l
@@ -316,23 +303,19 @@ stop
               call rad_solver_wg(w,rr,rs,ir,is,s2tmp,yrad,prad)
            end if
 
-           ! compute the uu and pp coefficents
+           ! compute the uu coefficents
            uu(3) = (sr0(1)*yrad(1,1) + sr0(2)*yrad(1,2))/rr 
- !          pp(3) = (sr0(1)*prad(1,1) + sr0(2)*prad(1,2))/rr 
            
 
            if(out_switch == 1) then
-              uu(3) = ii*w*uu(3)
-              pp(3) = ii*w*pp(3)
+              uu(3) = ii*w*uu(3)              
            elseif(out_switch == 2) then
-              uu(3) = -w*w*uu(3)
-              pp(3) = -w*w*pp(3)
+              uu(3) = -w*w*uu(3)              
            end if
 
            ! sum the spherical harmonic series
            do k = 1,nr
-              ur(j,k) = ur(j,k) + uu(3)*xa(1,1,k)
-              phi(j,k) = phi(j,k) + pp(3)*xa(1,1,k)
+              ur(j,k) = ur(j,k) + uu(3)*xa(1,1,k)              
            end do
 
         else               
@@ -442,9 +425,6 @@ stop
            vv(:) = (ysph(2,1)*svs(:,1) + ysph(2,2)*svs(:,2) & 
                    +ysph(2,3)*svs(:,4) + ysph(2,4)*svs(:,5))/(zeta*rr)
 
-           pp(:) = (ysph(3,1)*svs(:,1) + ysph(3,2)*svs(:,2) & 
-                   +ysph(3,3)*svs(:,4) + ysph(3,4)*svs(:,5))/rr
-
            do k = 1,nr             
               do m = -2,2
                  if(m >= 0) then
@@ -460,23 +440,15 @@ stop
                  ei = eia(k)**m                            
                  ur(j,k)  = ur(j,k)  + uu(m+3)*x*ei
                  ut(j,k)  = ut(j,k)  + vv(m+3)*xp*ei              
-                 up(j,k)  = up(j,k)  + ii*m*vv(m+3)*xc*ei    
-                 phi(j,k) = phi(j,k) + pp(m+3)*x*ei
+                 up(j,k)  = up(j,k)  + ii*m*vv(m+3)*xc*ei                     
               end do
-           end do
-           
-           if(phi_coef_switch == 1) then
-
-              ! form the phi coefficient vector
-              phi_coef(j,:) = pp(:)
-              
-           end if
+           end do           
 
         end if
      end do wloop
      ! end loop over frequency
-
      
+<<<<<<< HEAD
      ! inverse transform phi coefficients
      if(phi_coef_switch == 1) then
 
@@ -509,6 +481,8 @@ stop
      end if
 
 
+=======
+>>>>>>> main
   end do
   ! end loop over l
 
@@ -516,7 +490,7 @@ stop
   !------------------------------------------!
   !   perform inverse Fourier transform      !
   !------------------------------------------!
-  call ifft4(nt,i1,i2,df,f11,f12,f21,f22,dt,ur,ut,up,phi)
+  call ifft(nt,i1,i2,df,f11,f12,f21,f22,dt,ur,ut,up)
   nt = size(ur,1)
   
   !--------------------------------------------!
@@ -527,8 +501,7 @@ stop
      t = (i-1)*dt
         ur(i,:)  = ur(i,:)*exp(ep*t)
         ut(i,:)  = ut(i,:)*exp(ep*t)
-        up(i,:)  = up(i,:)*exp(ep*t)
-        phi(i,:) = phi(i,:)*exp(ep*t)
+        up(i,:)  = up(i,:)*exp(ep*t)        
   end do
 
 
@@ -536,18 +509,15 @@ stop
   if(out_switch == 0) then
      ur = ur*r_norm
      ut = ut*r_norm
-     up = up*r_norm
-     phi = phi*pot_norm
+     up = up*r_norm     
   elseif(out_switch == 1) then
      ur = ur*vel_norm
      ut = ut*vel_norm
-     up = up*vel_norm
-     phi = phi*pot_norm/t_norm
+     up = up*vel_norm     
   elseif(out_switch == 2) then
      ur = ur*acl_norm
      ut = ut*acl_norm
-     up = up*acl_norm
-     phi = phi*pot_norm/(t_norm**2)
+     up = up*acl_norm     
   end if
 
   !----------------------------------------------------------!
@@ -585,7 +555,7 @@ stop
         t = (i-1)*dt
         t = t*t_norm
         write(io1,100) t,real(ur(i,k)),real(ut(i,k)), & 
-             real(up(i,k)),real(phi(i,k))
+             real(up(i,k))
      end do
      close(io1)
 
