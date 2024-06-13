@@ -1,9 +1,9 @@
 # YSpec
 
-This is a code for computing synthetic seismograms within spherically symmetric earth models. It is based on the direct radial integration method discussed within Al-Attar & Woodhouse (2008).
+The program yspec calculates synthetic seismograms in spherically symmetric earth models using the
+direct radial integration method introduced by Friedrich & Dalkolmo (1995), and extended in Al-Attar
+& Woodhouse (2008) to incorporate the effects of self-gravitation.
 
-Self gravitation is optionally included within the calculations. 
+## Installation
 
-Example model files and an input file are included.
-
-
+Building with `CMake` is recommended. 
