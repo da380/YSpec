@@ -63,7 +63,7 @@ module module_int
 
 
 
-  use nrtype
+  use module_kinds
   use module_spline
   implicit none
   
@@ -111,10 +111,15 @@ module module_int
   complex(dpc), save, public :: omega2   ! equal to w*w
   complex(dpc), save, public :: omegai   ! equal to 1/w
   complex(dpc), save, public :: omegai2  ! equal to 1/(w*w)
-  complex(dpc), save, public :: lno      ! equal to  (2/pi)*ln(i*w/w0), with w0 the 
+  complex(dpc), save, public :: lno      ! equal to  (2/pi)*ln(i*w/w0), with w0 the
                                          ! reference frequency of the earth model.
                                          ! This value is used in the computation of
                                          ! the anelastic moduli.
+
+  ! these variables are reset for each (l,w) calculation, so each
+  ! thread needs its own copy when the frequency loop runs in parallel
+  !$omp threadprivate(il,ll,llp1,zeta,zeta2,zeta2m2,szeta2m2,nu,dr,ats, &
+  !$omp               omega,omega2,omegai,omegai2,lno)
 
 
 
@@ -137,7 +142,7 @@ module module_int
       ! toroidal mode coefficient matrix at a given    !
       ! radius in the earth model.                     !
       !------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
@@ -146,11 +151,11 @@ module module_int
       real(dp) :: rrho,rlcon,rncon,rmu,rqmu,ri
       complex(dpc) :: clcon,cncon,qll
       ! evaluate cubic splines
-      rrho  = splint_dis(r,rho,rho_cs,rr,il)
-      rlcon = splint_dis(r,lcon,lcon_cs,rr,il)
-      rncon = splint_dis(r,ncon,ncon_cs,rr,il)
-      rmu   = splint_dis(r,mu,mu_cs,rr,il)
-      rqmu  = splint_dis(r,qmu,qmu_cs,rr,il)      
+      rrho  = spline_value(r,rho,rho_cs,rr,il)
+      rlcon = spline_value(r,lcon,lcon_cs,rr,il)
+      rncon = spline_value(r,ncon,ncon_cs,rr,il)
+      rmu   = spline_value(r,mu,mu_cs,rr,il)
+      rqmu  = spline_value(r,qmu,qmu_cs,rr,il)      
       ! compute parameters
       qll = 1.0_dp+rqmu*lno
       clcon = rlcon*qll
@@ -170,7 +175,7 @@ module module_int
       ! This routine evaluates the derivatives for  !
       ! the toroidal mode system.                   !
       !---------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: y
@@ -193,11 +198,10 @@ module module_int
       ! as the step size used will be modified by  !
       ! the numerical integration routine.         !
       !--------------------------------------------!
-      use nrtype; use module_model
-      use nrutil
+      use module_kinds; use module_model
       implicit none
       integer(i4b) :: im
-      im=iminloc(beta(noc+1:nsl))      
+      im=minloc(beta(noc+1:nsl),1)      
       im=im+noc
       if(real(omega) == 0.0_dp) then
          dr=1.0_dp/nw
@@ -216,33 +220,31 @@ module module_int
       ! for the toroidal mode equations in terms  !
       ! of spherical Bessel functions             !
       !-------------------------------------------!
-      use nrtype; use module_function
+      use module_kinds; use module_function
       use module_spline; use module_model
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(2), intent(out) :: y
       real(dp) :: rrho,rmu,rqmu
-      complex(dpc) :: cmu,cbeta,arg,ym,ratio,kbeta,sarg,carg,qll
+      complex(dpc) :: cmu,qll,q
 
       ! evaluate cubic splines
-      rrho = splint_dis(r,rho,rho_cs,rr,is)
-      rmu  = splint_dis(r,mu,mu_cs,rr,is)
-      rqmu = splint_dis(r,qmu,qmu_cs,rr,is)      
+      rrho = spline_value(r,rho,rho_cs,rr,is)
+      rmu  = spline_value(r,mu,mu_cs,rr,is)
+      rqmu = spline_value(r,qmu,qmu_cs,rr,is)      
 
       ! compute parameters
       qll = 1.0_dp+rqmu*lno
-      cmu   = rmu*qll
-      cbeta = sqrt(cmu/rrho) 
-      kbeta = omega/cbeta
+      cmu = rmu*qll
 
-      ! compute spherical Bessel functions
-      arg = kbeta*rr
-      call sbessj2(llp1,arg,ratio)
+      ! spherical Bessel function ratio at (k*r)**2, with k the
+      ! shear wavenumber
+      q = bessel_q(ll,omega2*rrho*rr*rr/cmu)
 
       ! compute solutions
       y(1) = rr
-      y(2) = cmu*((ll-1)-arg*ratio) 
+      y(2) = cmu*((ll-1)-q)
       y    = zeta*y
 
 
@@ -264,7 +266,7 @@ module module_int
       ! radial mode coefficient matrix at a given      !
       ! radius in the earth model.                     !
       !------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
@@ -273,18 +275,18 @@ module module_int
            rqmu,ri,gg,rkappa,rqkappa,rncon,rxlam,rxa2
       complex(dpc) :: cacon,cccon,cfcon,gamma,cncon,qaa,qll,qff
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      racon   = splint_dis(r,acon,acon_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      rfcon   = splint_dis(r,fcon,fcon_cs,rr,il)
-      rncon   = splint_dis(r,ncon,ncon_cs,rr,il)
-      gg      = splint_dis(r,grav,grav_cs,rr,il)
-      rmu     = splint_dis(r,mu,mu_cs,rr,il)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,il)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxlam    = splint_dis(r,xlam,xlam_cs,rr,il)
-      rxa2    = splint_dis(r,xa2,xa2_cs,rr,il)
+      rrho    = spline_value(r,rho,rho_cs,rr,il)
+      racon   = spline_value(r,acon,acon_cs,rr,il)
+      rccon   = spline_value(r,ccon,ccon_cs,rr,il)
+      rfcon   = spline_value(r,fcon,fcon_cs,rr,il)
+      rncon   = spline_value(r,ncon,ncon_cs,rr,il)
+      gg      = spline_value(r,grav,grav_cs,rr,il)
+      rmu     = spline_value(r,mu,mu_cs,rr,il)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,il)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxlam    = spline_value(r,xlam,xlam_cs,rr,il)
+      rxa2    = spline_value(r,xa2,xa2_cs,rr,il)
       ! compute parameters
       qaa = 1.0_dp+rxa2*lno
       qff = 1.0_dp+rxlam*lno
@@ -302,52 +304,6 @@ module module_int
       s = -omega2*rrho+4.0_dp*(gamma-rrho*gg*rr)*ri*ri
       return
     end subroutine rad_amat
-
-
-
-    subroutine rad_amat_ng(rr,t,k,s)
-      !------------------------------------------------!
-      ! This routine returns the elements of the       !
-      ! radial mode coefficient matrix at a given      !
-      ! radius in the earth model.                     !
-      !------------------------------------------------!
-      use nrtype; use module_model
-      use module_spline
-      implicit none
-      real(dp), intent(in) :: rr
-      complex(dpc), intent(out) :: t,k,s
-      real(dp) :: rrho,racon,rccon,rfcon,rmu, & 
-           rqmu,ri,rkappa,rqkappa,rncon,rxlam,rxa2
-      complex(dpc) :: cacon,cccon,cfcon,gamma,cncon,qaa,qll,qff
-      ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      racon   = splint_dis(r,acon,acon_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      rfcon   = splint_dis(r,fcon,fcon_cs,rr,il)
-      rncon   = splint_dis(r,ncon,ncon_cs,rr,il)
-      rmu     = splint_dis(r,mu,mu_cs,rr,il)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,il)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxlam    = splint_dis(r,xlam,xlam_cs,rr,il)
-      rxa2    = splint_dis(r,xa2,xa2_cs,rr,il)
-      ! compute parameters
-      qaa = 1.0_dp+rxa2*lno
-      qff = 1.0_dp+rxlam*lno
-      qll = 1.0_dp+rqmu*lno
-      cacon = racon*qaa
-      cccon = rccon*qaa
-      cfcon = rfcon*qff
-      cncon = rncon*qll
-      cccon = 1.0_dp/cccon
-      gamma = cacon-cncon-cfcon*cfcon*cccon      
-      ri    = 1.0_dp/rr
-      ! compute matrix elements
-      t = (1.0_dp-2.0_dp*cfcon*cccon)*ri
-      k = cccon
-      s = -omega2*rrho+4.0_dp*gamma*ri*ri
-      return
-    end subroutine rad_amat_ng
     
 
 
@@ -359,7 +315,7 @@ module module_int
       ! This routine evaluates the derivatives for  !
       ! the radial mode system.                     !
       !---------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: y
@@ -379,7 +335,7 @@ module module_int
       ! This routine evaluates the derivatives for  !
       ! the radial mode system.                     !
       !---------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: y
@@ -399,11 +355,10 @@ module module_int
       ! as the step size used will be modified by  !
       ! the numerical integration routine.         !
       !--------------------------------------------!
-      use nrtype; use module_model
-      use nrutil
+      use module_kinds; use module_model
       implicit none
       integer(i4b) :: im
-      im=iminloc(alpha)      
+      im=minloc(alpha,1)      
       if(real(omega) == 0.0_dp) then
          dr = 1.0_dp/nw
       else
@@ -420,34 +375,33 @@ module module_int
       ! for the radial mode equations in terms of  !
       ! spherical Bessel functions                 !
       !--------------------------------------------!
-      use nrtype; use module_function
+      use module_kinds; use module_function
       use module_spline; use module_model
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(2), intent(out) :: y
-      real(dp) :: rrho,rmu,rqmu,ri,gg,rkappa,rqkappa
-      complex(dpc) :: gamma,cmu,ckappa,calpha,ratio,arg
-      complex(dpc), dimension(2) :: jl
+      real(dp) :: rrho,rmu,rqmu,gg,rkappa,rqkappa
+      complex(dpc) :: gamma,cmu,ckappa,calpha,q
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,is)
-      gg      = splint_dis(r,grav,grav_cs,rr,is)
-      rmu     = splint_dis(r,mu,mu_cs,rr,is)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,is)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,is)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,is)      
+      rrho    = spline_value(r,rho,rho_cs,rr,is)
+      gg      = spline_value(r,grav,grav_cs,rr,is)
+      rmu     = spline_value(r,mu,mu_cs,rr,is)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,is)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,is)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,is)      
       ! compute parameters
       cmu    = rmu*(1.0_dp+rqmu*lno)
       ckappa = rkappa*(1.0_dp+rqkappa*lno)
       calpha = (ckappa+4.0_dp*cmu/3.0_dp)
       gamma  = omega2+16.0_dp*pibigg*rrho/3.0_dp
       gamma  = rrho*gamma/calpha
-      ! compute spherical Bessel function ratios
-      arg=gamma*rr      
-      call sbessj2(1,arg,ratio)      
+      ! spherical Bessel function ratio at (k*r)**2, where gamma
+      ! is the square of the wavenumber k
+      q = bessel_q(0,gamma*rr*rr)
       ! compute solution
-      y(1)=rr*ratio
-      y(2)=rr*calpha*gamma-4.0_dp*cmu*ratio
+      y(1)=q
+      y(2)=rr*calpha*gamma-4.0_dp*cmu*q/rr
       return      
     end subroutine rad_ystart
 
@@ -458,33 +412,32 @@ module module_int
       ! for the radial mode equations in terms of  !
       ! spherical Bessel functions                 !
       !--------------------------------------------!
-      use nrtype; use module_function
+      use module_kinds; use module_function
       use module_spline; use module_model
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(2), intent(out) :: y
-      real(dp) :: rrho,rmu,rqmu,ri,rkappa,rqkappa
-      complex(dpc) :: gamma,cmu,ckappa,calpha,ratio,arg
-      complex(dpc), dimension(2) :: jl
+      real(dp) :: rrho,rmu,rqmu,rkappa,rqkappa
+      complex(dpc) :: gamma,cmu,ckappa,calpha,q
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,is)
-      rmu     = splint_dis(r,mu,mu_cs,rr,is)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,is)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,is)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,is)      
+      rrho    = spline_value(r,rho,rho_cs,rr,is)
+      rmu     = spline_value(r,mu,mu_cs,rr,is)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,is)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,is)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,is)      
       ! compute parameters
       cmu    = rmu*(1.0_dp+rqmu*lno)
       ckappa = rkappa*(1.0_dp+rqkappa*lno)
       calpha = (ckappa+4.0_dp*cmu/3.0_dp)
       gamma  = omega2
       gamma  = rrho*gamma/calpha
-      ! compute spherical Bessel function ratios
-      arg=gamma*rr      
-      call sbessj2(1,arg,ratio)      
+      ! spherical Bessel function ratio at (k*r)**2, where gamma
+      ! is the square of the wavenumber k
+      q = bessel_q(0,gamma*rr*rr)
       ! compute solution
-      y(1)=rr*ratio
-      y(2)=rr*calpha*gamma-4.0_dp*cmu*ratio
+      y(1)=q
+      y(2)=rr*calpha*gamma-4.0_dp*cmu*q/rr
       return      
     end subroutine rad_ystart_ng
 
@@ -504,7 +457,7 @@ module module_int
       ! mode coefficient matrix in solid parts of the earth   !
       ! model.                                                !
       !-------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
@@ -514,19 +467,19 @@ module module_int
            rqmu,ri,gg,rkappa,rqkappa,rncon,rlcon,rxlam,rxa2
       complex(dpc) :: cacon,cccon,cfcon,gamma,cncon,clcon,qll,qaa,qff
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      racon   = splint_dis(r,acon,acon_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      rfcon   = splint_dis(r,fcon,fcon_cs,rr,il)
-      rncon   = splint_dis(r,ncon,ncon_cs,rr,il)
-      rlcon   = splint_dis(r,lcon,lcon_cs,rr,il)
-      gg      = splint_dis(r,grav,grav_cs,rr,il)
-      rmu     = splint_dis(r,mu,mu_cs,rr,il)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,il)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxlam = splint_dis(r,xlam,xlam_cs,rr,il)      
-      rxa2 = splint_dis(r,xa2,xa2_cs,rr,il)      
+      rrho    = spline_value(r,rho,rho_cs,rr,il)
+      racon   = spline_value(r,acon,acon_cs,rr,il)
+      rccon   = spline_value(r,ccon,ccon_cs,rr,il)
+      rfcon   = spline_value(r,fcon,fcon_cs,rr,il)
+      rncon   = spline_value(r,ncon,ncon_cs,rr,il)
+      rlcon   = spline_value(r,lcon,lcon_cs,rr,il)
+      gg      = spline_value(r,grav,grav_cs,rr,il)
+      rmu     = spline_value(r,mu,mu_cs,rr,il)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,il)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxlam = spline_value(r,xlam,xlam_cs,rr,il)      
+      rxa2 = spline_value(r,xa2,xa2_cs,rr,il)      
       ! compute parameters
       qaa = 1.0_dp+rxa2*lno
       qff = 1.0_dp+rxlam*lno
@@ -568,7 +521,7 @@ module module_int
       ! mode coefficient matrix in solid parts of the earth   !
       ! model. Neglects self-gravitation                      !
       !-------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
@@ -578,18 +531,18 @@ module module_int
            rqmu,ri,rkappa,rqkappa,rncon,rlcon,rxlam,rxa2
       complex(dpc) :: cacon,cccon,cfcon,gamma,cncon,clcon,qff,qll,qaa
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      racon   = splint_dis(r,acon,acon_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      rfcon   = splint_dis(r,fcon,fcon_cs,rr,il)
-      rncon   = splint_dis(r,ncon,ncon_cs,rr,il)
-      rlcon   = splint_dis(r,lcon,lcon_cs,rr,il)
-      rmu     = splint_dis(r,mu,mu_cs,rr,il)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,il)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxlam = splint_dis(r,xlam,xlam_cs,rr,il)      
-      rxa2 = splint_dis(r,xa2,xa2_cs,rr,il)      
+      rrho    = spline_value(r,rho,rho_cs,rr,il)
+      racon   = spline_value(r,acon,acon_cs,rr,il)
+      rccon   = spline_value(r,ccon,ccon_cs,rr,il)
+      rfcon   = spline_value(r,fcon,fcon_cs,rr,il)
+      rncon   = spline_value(r,ncon,ncon_cs,rr,il)
+      rlcon   = spline_value(r,lcon,lcon_cs,rr,il)
+      rmu     = spline_value(r,mu,mu_cs,rr,il)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,il)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxlam = spline_value(r,xlam,xlam_cs,rr,il)      
+      rxa2 = spline_value(r,xa2,xa2_cs,rr,il)      
       ! compute parameters
       qaa = 1.0_dp+rxa2*lno
       qff = 1.0_dp+rxlam*lno
@@ -623,7 +576,7 @@ module module_int
       ! mode coefficient matrix in solid parts of the earth   !
       ! model.  Uses Cowling approximation                    !
       !-------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
@@ -633,19 +586,19 @@ module module_int
            rqmu,ri,gg,rkappa,rqkappa,rncon,rlcon,rxlam,rxa2
       complex(dpc) :: cacon,cccon,cfcon,gamma,cncon,clcon,qaa,qff,qll
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      racon   = splint_dis(r,acon,acon_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      rfcon   = splint_dis(r,fcon,fcon_cs,rr,il)
-      rncon   = splint_dis(r,ncon,ncon_cs,rr,il)
-      rlcon   = splint_dis(r,lcon,lcon_cs,rr,il)
-      gg      = splint_dis(r,grav,grav_cs,rr,il)
-      rmu     = splint_dis(r,mu,mu_cs,rr,il)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,il)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxlam = splint_dis(r,xlam,xlam_cs,rr,il)      
-      rxa2 = splint_dis(r,xa2,xa2_cs,rr,il)      
+      rrho    = spline_value(r,rho,rho_cs,rr,il)
+      racon   = spline_value(r,acon,acon_cs,rr,il)
+      rccon   = spline_value(r,ccon,ccon_cs,rr,il)
+      rfcon   = spline_value(r,fcon,fcon_cs,rr,il)
+      rncon   = spline_value(r,ncon,ncon_cs,rr,il)
+      rlcon   = spline_value(r,lcon,lcon_cs,rr,il)
+      gg      = spline_value(r,grav,grav_cs,rr,il)
+      rmu     = spline_value(r,mu,mu_cs,rr,il)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,il)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxlam = spline_value(r,xlam,xlam_cs,rr,il)      
+      rxa2 = spline_value(r,xa2,xa2_cs,rr,il)      
       ! compute parameters
       qaa = 1.0_dp+rxa2*lno
       qff = 1.0_dp+rxlam*lno
@@ -680,7 +633,7 @@ module module_int
       ! mode coefficient matrix in fluid parts of the earth   !
       ! model.                                                !
       !-------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
@@ -690,12 +643,12 @@ module module_int
            ri,gg,rkappa,rqkappa,rxa2
       complex(dpc) :: cccon,qaa
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      gg      = splint_dis(r,grav,grav_cs,rr,il)     
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxa2 = splint_dis(r,xa2,xa2_cs,rr,il)      
+      rrho    = spline_value(r,rho,rho_cs,rr,il)
+      rccon   = spline_value(r,ccon,ccon_cs,rr,il)
+      gg      = spline_value(r,grav,grav_cs,rr,il)     
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxa2 = spline_value(r,xa2,xa2_cs,rr,il)      
       ! compute parameters
       qaa = 1.0_dp+rxa2*lno
       cccon = rccon*qaa
@@ -723,19 +676,18 @@ module module_int
       ! mode coefficient matrix in fluid parts of the earth   !
       ! model.                                                !
       !-------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), intent(out) :: t,k,s
-      real(dp) :: rrho,rccon, & 
-           ri,gg,rkappa,rqkappa,rxa2
+      real(dp) :: rrho,rccon,ri,rkappa,rqkappa,rxa2
       complex(dpc) :: cccon,qaa
-      rrho=splint_dis(r,rho,rho_cs,rr,il)
-      rccon=splint_dis(r,ccon,ccon_cs,rr,il)
-      rkappa=splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa=splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxa2=splint_dis(r,xa2,xa2_cs,rr,il)      
+      rrho=spline_value(r,rho,rho_cs,rr,il)
+      rccon=spline_value(r,ccon,ccon_cs,rr,il)
+      rkappa=spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa=spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxa2=spline_value(r,xa2,xa2_cs,rr,il)      
       qaa   = 1.0_dp+rxa2*lno
       cccon = rccon*qaa
       cccon = 1.0_dp/cccon
@@ -754,22 +706,21 @@ module module_int
       ! mode coefficient matrix in fluid parts of the earth   !
       ! model.                                                !
       !-------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), intent(out) :: t,k,s
-      real(dp) :: rrho,racon,rccon, & 
-           ri,gg,rkappa,rqkappa,rxa2
-      complex(dpc) :: cacon,cccon,qaa
+      real(dp) :: rrho,rccon,ri,gg,rkappa,rqkappa,rxa2
+      complex(dpc) :: cccon,qaa
 
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,il)
-      rccon   = splint_dis(r,ccon,ccon_cs,rr,il)
-      gg      = splint_dis(r,grav,grav_cs,rr,il)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,il)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,il)      
-      rxa2=splint_dis(r,xa2,xa2_cs,rr,il)      
+      rrho    = spline_value(r,rho,rho_cs,rr,il)
+      rccon   = spline_value(r,ccon,ccon_cs,rr,il)
+      gg      = spline_value(r,grav,grav_cs,rr,il)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,il)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,il)      
+      rxa2=spline_value(r,xa2,xa2_cs,rr,il)      
 
       ! compute some parameters
       qaa   = 1.0_dp+rxa2*lno
@@ -784,34 +735,6 @@ module module_int
 
       return
     end subroutine sph_fluid_amat_cow
-    
-
-    subroutine sph_solid_derivs(rr,y,dydr)
-      !---------------------------------------------------!
-      ! This routine returns the derivatives of the 3rd   !
-      ! order minors vector equations for the spheroidal  !
-      ! mode system in solid parts of the earth model.    !
-      !---------------------------------------------------!
-      use nrtype
-      implicit none
-      real(dp), intent(in) :: rr
-      complex(dpc), dimension(:), intent(in) :: y
-      complex(dpc), dimension(:), intent(inout) :: dydr
-      complex(dpc) :: t11,t12,t21,t22,t31,t33, & 
-         k11,k22,k33,s11,s12,s13,s22,s23
-
-      call sph_solid_amat(rr,t11,t12,t21,t22,t31,t33, &            
-         k11,k22,k33,s11,s12,s13,s22,s23)      
-
-      dydr(1) = t11*y(1) + t12*y(2) + k11*y(4)
-      dydr(2) = t21*y(1) + t22*y(2) + k22*y(5)
-      dydr(3) = t31*y(1) + t33*y(3) + k33*y(6)
-      dydr(4) = s11*y(1) + s12*y(2) + s13*y(3) - t11*y(4) - t21*y(5) - t31*y(6)
-      dydr(5) = s12*y(1) + s22*y(2) + s23*y(3) - t12*y(4) - t22*y(5)
-      dydr(6) = s13*y(1) + s23*y(2) - t33*y(6)
-
-      return
-    end subroutine sph_solid_derivs
 
 
 
@@ -821,7 +744,7 @@ module module_int
       ! order minors vector equations for the spheroidal  !
       ! mode system in solid parts of the earth model.    !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: m
@@ -877,7 +800,7 @@ module module_int
       ! order minors vector equations for the spheroidal  !
       ! mode system in solid parts of the earth model.    !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: m
@@ -910,7 +833,7 @@ module module_int
       ! order minors vector equations for the spheroidal  !
       ! mode system in solid parts of the earth model.    !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: m
@@ -944,7 +867,7 @@ module module_int
       ! order minors vector equations for the spheroidal  !
       ! mode system in fluid parts of the earth model.    !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: m
@@ -974,7 +897,7 @@ module module_int
       ! order minors vector equations for the spheroidal  !
       ! mode system in fluid parts of the earth model.    !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: m
@@ -996,7 +919,7 @@ module module_int
       ! order minors vector equations for the spheroidal  !
       ! mode system in fluid parts of the earth model.    !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: m
@@ -1019,13 +942,13 @@ module module_int
       ! order 'b-vector' equations in solid parts of the  !
       ! earth model.                                      !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: b
       complex(dpc), dimension(:), intent(inout) :: dbdr
-      complex(dpc) :: t11,t12,t21,t22,t31,t33, & 
-         k11,k22,k33,s11,s12,s13,s22,s23,a123,a126,a135,a234
+      complex(dpc) :: t11,t12,t21,t22,t31,t33,k11,k22,k33,s11,s12,s13, &
+           s22,s23
 
       call sph_solid_amat(rr,t11,t12,t21,t22,t31,t33, & 
          k11,k22,k33,s11,s12,s13,s22,s23)
@@ -1063,7 +986,7 @@ module module_int
       ! order 'b-vector' equations in fluid parts of the  !
       ! earth model.                                      !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: b
@@ -1090,7 +1013,7 @@ module module_int
       ! order 'b-vector' equations in fluid parts of the  !
       ! earth model.                                      !
       !---------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: rr
       complex(dpc), dimension(:), intent(in) :: b
@@ -1110,35 +1033,6 @@ module module_int
     end subroutine sph_bvec_solid_derivs_cow
 
 
-    
-
-
-    subroutine sph_bvec_fluid_derivs(rr,b,dbdr)
-      !---------------------------------------------------!
-      ! This routine returns the derivatives of the 1st   !
-      ! order 'b-vector' equations in fluid parts of the  !
-      ! earth model.                                      !
-      !---------------------------------------------------!
-      use nrtype
-      implicit none
-      real(dp), intent(in) :: rr
-      complex(dpc), dimension(:), intent(in) :: b
-      complex(dpc), dimension(:), intent(inout) :: dbdr
-      complex(dpc) :: t11,t12,t21,t22,k11,k22, & 
-           s11,s12,s22
-
-      call sph_fluid_amat(rr,t11,t12,t21,t22,k11,k22, & 
-           s11,s12,s22)
-
-      dbdr(1) = -s11*b(3)-s12*b(4)-t11*b(1)-t21*b(2)
-      dbdr(2) = -s12*b(3)-s22*b(4)-t12*b(1)-t22*b(2)
-      dbdr(3) = -k11*b(1)+t11*b(3)+t12*b(4)
-      dbdr(4) = -k22*b(2)+t21*b(3)+t22*b(4)
-
-      return
-    end subroutine sph_bvec_fluid_derivs
-
-
 
 
 
@@ -1148,13 +1042,12 @@ module module_int
       ! at the step size used in the spheroidal !
       ! mode numerical integrations             !
       !-----------------------------------------!
-      use nrtype; use module_model
-      use nrutil
+      use module_kinds; use module_model
       implicit none
       integer(i4b) :: im
 
 
-      im=iminloc(alpha)      
+      im=minloc(alpha,1)      
       if(real(omega) == 0.0_dp) then
          dr = 1.0_dp/nw
       else
@@ -1166,28 +1059,6 @@ module module_int
     end subroutine sph_steps
 
 
-    subroutine sph_steps2(i1)
-      !--------------------------------------------!
-      ! This routine returns an initial step size  !
-      ! for the integration of the toroidal mode   !
-      ! system. This guess is not very important,  !
-      ! as the step size used will be modified by  !
-      ! the numerical integration routine.         !
-      !--------------------------------------------!
-      use nrtype; use module_model
-      use nrutil
-      implicit none
-      integer(i4b), intent(in) :: i1
-      if(real(omega) == 0.0_dp) then
-         dr=1.0_dp/nw
-      else
-         dr=nw*real(omega)/alpha(i1)
-         dr=1.0_dp/dr
-      end if
-      return
-    end subroutine sph_steps2
-
-
 
     subroutine sph_solid_start(is,rr,y)
       !----------------------------------------------------!
@@ -1195,35 +1066,34 @@ module module_int
       ! spheroidal mode equations in solid parts of the    !
       ! earth model in terms of spherical Bessel functions !
       !----------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline; use module_function
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(6,3), intent(out) :: y
       integer(i4b) :: i
-      real(dp) :: rrho,rmu,rqmu,ri,gg,rkappa,rqkappa, & 
-           sign,rl,rlm
-      complex(dpc) :: gamma,cmu,ckappa,calpha,ratio, & 
-           arg,cbeta,tmp1,tmp2,tmp3,zt,xi,gamma2,args
+      real(dp) :: rrho,rmu,rqmu,gg,rkappa,rqkappa,sign
+      complex(dpc) :: gamma,cmu,ckappa,calpha,q, & 
+           cbeta,tmp1,tmp2,tmp3,zt,xi
 
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,is)
-      gg      = splint_dis(r,grav,grav_cs,rr,is)
-      rmu     = splint_dis(r,mu,mu_cs,rr,is)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,is)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,is)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,is)      
+      rrho    = spline_value(r,rho,rho_cs,rr,is)
+      gg      = spline_value(r,grav,grav_cs,rr,is)
+      rmu     = spline_value(r,mu,mu_cs,rr,is)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,is)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,is)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,is)      
       ! compute parameters
       cmu    = rmu*(1.0_dp+rqmu*lno)
       ckappa = rkappa*(1.0_dp+rqkappa*lno)
-      calpha = (ckappa+1.3333333333_dp*cmu)/rrho     
+      calpha = (ckappa+4.0_dp*cmu/3.0_dp)/rrho     
       cbeta  = cmu/rrho
       sign   = 1.0_dp
       tmp1   = omega2/cbeta
-      tmp2   = omega2+5.3333333_dp*pibigg*rrho
+      tmp2   = omega2+16.0_dp*pibigg*rrho/3.0_dp
       tmp2   = tmp2/calpha
-      tmp3   = 2.666666666_dp*pibigg*zeta*rrho
+      tmp3   = 8.0_dp*pibigg*zeta*rrho/3.0_dp
       tmp3   = tmp3*tmp3/(calpha*cbeta)
 
       ! loop over first two solutions
@@ -1231,24 +1101,21 @@ module module_int
          gamma  = (tmp1-tmp2)**2+tmp3
          gamma  = 0.5_dp*(tmp1+tmp2)  & 
                  +0.5_dp*sign*sqrt(gamma)
-         gamma2 = gamma
-         gamma  =sqrt(gamma)
-         zt     = 0.75_dp*cbeta*(gamma2-tmp1)/(pibigg*rrho)
-         xi     = zt-real(llp1)
+         zt     = 0.75_dp*cbeta*(gamma-tmp1)/(pibigg*rrho)
+         xi     = zt-llp1
 
-         ! compute spherical Bessel function ratio
-         arg    = gamma*rr
-         args   = gamma2*rr*rr
-         call bfs_dum(ll,args,ratio)
+         ! spherical Bessel function ratio at (k*r)**2, where gamma
+         ! is the square of the wavenumber k
+         q = bessel_q(ll,gamma*rr*rr)
          ! compute solutions
-         y(1,i) = ll*xi-zt*gamma*rr*ratio
-         y(2,i) = zeta*(xi+rr*gamma*ratio)
+         y(1,i) = ll*xi-zt*q
+         y(2,i) = zeta*(xi+q)
          y(3,i) = -4.0_dp*pibigg*rrho*rr*zt
-         y(4,i) = -rrho*calpha*zt*rr*gamma2 & 
+         y(4,i) = -rrho*calpha*zt*rr*gamma & 
                   +2.0_dp*cmu*ll*(ll-1)*xi/rr & 
-                  +2.0_dp*cmu*(2.0_dp*zt+zeta2)*gamma*ratio
-         y(5,i)  = rr*gamma2+2.0_dp*(ll-1)*xi/rr & 
-                   -2.0_dp*(zt+1.0_dp)*gamma*ratio
+                  +2.0_dp*cmu*(2.0_dp*zt+zeta2)*q/rr
+         y(5,i)  = rr*gamma+2.0_dp*(ll-1)*xi/rr & 
+                   -2.0_dp*(zt+1.0_dp)*q/rr
          y(5,i) = cmu*zeta*y(5,i)
          y(6,i) = -rrho*(zeta2+llp1*zt)      
          
@@ -1280,59 +1147,46 @@ module module_int
       ! These formula come from Takeuchi and Saito 1972    !
       ! equations (104) and (105)                          !
       !----------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline; use module_function
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(4,2), intent(out) :: y
-      real(dp) :: rrho,rmu,rqmu,ri,gg,rkappa,rqkappa, & 
-           sign,rl,rlm
-      complex(dpc) :: gamma,cmu,ckappa,calpha,ratio, & 
-           arg,cbeta,tmp1,tmp2,tmp3,zt,xi,gamma2
-      complex(dpc), dimension(2) :: jl
+      real(dp) :: rrho,rmu,rqmu,rkappa,rqkappa
+      complex(dpc) :: cmu,ckappa,calpha,cbeta,z,q
 
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,is)
-      rmu     = splint_dis(r,mu,mu_cs,rr,is)
-      rqmu    = splint_dis(r,qmu,qmu_cs,rr,is)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,is)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,is)      
+      rrho    = spline_value(r,rho,rho_cs,rr,is)
+      rmu     = spline_value(r,mu,mu_cs,rr,is)
+      rqmu    = spline_value(r,qmu,qmu_cs,rr,is)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,is)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,is)      
       cmu     = rmu*(1.0_dp+rqmu*lno)
       
       ! compute some parameters
       ckappa = rkappa*(1.0_dp+rqkappa*lno)
-      calpha = (ckappa+1.3333333333_dp*cmu)/rrho     
+      calpha = (ckappa+4.0_dp*cmu/3.0_dp)/rrho     
       cbeta  = cmu/rrho
       
-      ! first solution
-      arg = omega*rr/sqrt(calpha)
-      call sbessj2(llp1,arg,ratio)
-      jl(1)  = one
-      jl(2)  = ratio      
-      y(1,1) = ll*jl(1)-arg*jl(2)
-      y(2,1) = zeta*jl(1)
-      y(3,1) = -rrho*calpha*arg*arg*jl(1) & 
-               +2.0_dp*cmu*(ll*(ll-1)*jl(1) & 
-               +2.0_dp*arg*jl(2))
+      ! first solution, with z = (k*r)**2 for the P wavenumber k
+      z = omega2*rr*rr/calpha
+      q = bessel_q(ll,z)
+      y(1,1) = ll-q
+      y(2,1) = zeta
+      y(3,1) = -rrho*calpha*z+2.0_dp*cmu*(ll*(ll-1)+2.0_dp*q)
       y(3,1) = y(3,1)/rr
-      y(4,1) = 2.0_dp*zeta*cmu*((ll-1)*jl(1) & 
-               -arg*jl(2))
+      y(4,1) = 2.0_dp*zeta*cmu*((ll-1)-q)
       y(4,1) = y(4,1)/rr
 
-      ! second solution
-      arg = omega*rr/sqrt(cbeta)
-      call sbessj2(llp1,arg,ratio)
-      jl(1)  = one
-      jl(2)  = ratio
-      y(1,2) = -ll*llp1*jl(1)
-      y(2,2) = -zeta*llp1*jl(1)+arg*jl(2)
-      y(3,2) = -2.0_dp*cmu*(ll*(ll*ll-1)*jl(1) & 
-               -ll*llp1*arg*jl(2))
+      ! second solution, with z = (k*r)**2 for the S wavenumber k
+      z = omega2*rr*rr/cbeta
+      q = bessel_q(ll,z)
+      y(1,2) = -ll*llp1
+      y(2,2) = -zeta*llp1+q
+      y(3,2) = -2.0_dp*cmu*(ll*(ll*ll-1)-ll*llp1*q)
       y(3,2) = y(3,2)/rr
-      y(4,2) = zeta*cmu*(arg*arg*jl(1) & 
-               -2.0_dp*(ll*ll-1)*jl(1) & 
-               -2.0_dp*arg*jl(2))
+      y(4,2) = zeta*cmu*(z-2.0_dp*(ll*ll-1)-2.0_dp*q)
       y(4,2) = y(4,2)/rr
 
 
@@ -1349,46 +1203,37 @@ module module_int
       ! spheroidal mode equations in fluid parts of the    !
       ! earth model in terms of spherical Bessel functions !
       !----------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline; use module_function
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(4,2), intent(out) :: y
-      integer(i4b) :: i
-      real(dp) :: rrho,ri,gg,rkappa,rqkappa, & 
-           sign,rl,rlm
-      complex(dpc) :: gamma,cmu,ckappa,calpha,ratio, & 
-           arg,tmp1,tmp2,tmp3,zt,xi,gamma2,gamg,args
+      real(dp) :: rrho,gg,rkappa,rqkappa
+      complex(dpc) :: gamma,ckappa,calpha,q,zt,xi,gamg
 
       ! evaluate cubic splines
-      rrho    = splint_dis(r,rho,rho_cs,rr,is)
-      gg      = splint_dis(r,grav,grav_cs,rr,is)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,is)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,is)      
+      rrho    = spline_value(r,rho,rho_cs,rr,is)
+      gg      = spline_value(r,grav,grav_cs,rr,is)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,is)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,is)      
 
       ! compute parameters
       ckappa = rkappa*(1.0_dp+rqkappa*lno)
       calpha = ckappa/rrho
       gamg   = 4.0_dp*pibigg*rrho/3.0_dp
       gamma  = (omega2+4.0_dp*gamg-zeta2*gamg*gamg*omegai2)/calpha
-      gamma2 = gamma
-      gamma  = sqrt(gamma)
       zt     = -omega2/gamg
       xi     =  zt-llp1
-      
 
-
-      ! compute Bessel functions
-      arg = gamma*rr
-      args = gamma2*rr*rr
-      call bfs_dum(ll,args,ratio)
-
+      ! spherical Bessel function ratio at (k*r)**2, where gamma
+      ! is the square of the wavenumber k
+      q = bessel_q(ll,gamma*rr*rr)
 
       ! compute first solution
-      y(1,1) = ll*xi-zt*gamma*rr*ratio
+      y(1,1) = ll*xi-zt*q
       y(2,1) = -4.0_dp*pibigg*rrho*rr*zt
-      y(3,1) = -rrho*calpha*zt*rr*gamma2                   
+      y(3,1) = -rrho*calpha*zt*rr*gamma
       y(4,1) =  -rrho*(zeta2+llp1*zt)     
 
       ! compute second solution
@@ -1407,38 +1252,35 @@ module module_int
     subroutine sph_fluid_start_ng(is,rr,y)
       !----------------------------------------------------!
       ! This routine returns the starting values for the   !
-      ! spheroidal mode equations in solid parts of the    !
+      ! spheroidal mode equations in fluid parts of the    !
       ! earth model in terms of spherical Bessel functions !
       ! These formula come from Takeuchi and Saito 1972    !
       ! equations (104) and (105)                          !
       !----------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_spline; use module_function
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(2), intent(out) :: y
-      real(dp) :: rrho,ri,gg,rkappa,rqkappa, & 
-           sign,rl,rlm
-      complex(dpc) :: gamma,cmu,ckappa,calpha,ratio, & 
-           arg,tmp1
+      real(dp) :: rrho,rkappa,rqkappa
+      complex(dpc) :: ckappa,calpha,z,q
 
-      rrho    = splint_dis(r,rho,rho_cs,rr,is)
-      rkappa  = splint_dis(r,kappa,kappa_cs,rr,is)
-      rqkappa = splint_dis(r,qkappa,qkappa_cs,rr,is)      
+      rrho    = spline_value(r,rho,rho_cs,rr,is)
+      rkappa  = spline_value(r,kappa,kappa_cs,rr,is)
+      rqkappa = spline_value(r,qkappa,qkappa_cs,rr,is)      
       ckappa  = rkappa*(1.0_dp+rqkappa*lno)
       calpha  = ckappa/rrho     
 
       
-      ! compute Bessel functions
-      arg   = omega*rr/sqrt(calpha)
-      
-      call sbessj2(llp1,arg,ratio)
+      ! spherical Bessel function ratio at z = (k*r)**2, with k
+      ! the P wavenumber
+      z = omega2*rr*rr/calpha
+      q = bessel_q(ll,z)
 
       ! compute solution
-      y(1) = ll-arg*ratio
-      y(2) = -rrho*calpha*arg*arg 
-      y(2) = y(2)/rr
+      y(1) = ll-q
+      y(2) = -rrho*calpha*z/rr
 
 
 
@@ -1455,13 +1297,12 @@ module module_int
       ! to compute the starting values for the 3rd order minor !
       ! vector equations in solid parts of the earth model     !
       !--------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
       complex(dpc), dimension(14), intent(out) :: m
       complex(dpc), dimension(6,3) :: y
-      integer(i4b), dimension(3) :: ind
 
       call sph_solid_start(is,rr,y)
 
@@ -1487,7 +1328,7 @@ module module_int
 
 
     subroutine sph_minor_solid_start_ng(is,rr,m)      
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
@@ -1513,7 +1354,7 @@ module module_int
       ! to compute the starting values for the 2nd order minor !
       ! vector equations in fluid parts of the earth model     !
       !--------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: is
       real(dp), intent(in) :: rr
@@ -1535,7 +1376,7 @@ module module_int
 
 
     function det3(y1,y2,y3)
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc) :: det3
       complex(dpc), dimension(3), intent(in) :: y1,y2,y3
@@ -1549,7 +1390,7 @@ module module_int
       
 
     function det2(y1,y2)
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc) :: det2
       complex(dpc), dimension(2), intent(in) :: y1,y2
@@ -1567,7 +1408,7 @@ module module_int
       ! value of the 'b-vector' equations in a solid part of  !
       ! the earth model.                                      !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(14), intent(in)  :: m
       complex(dpc), dimension(6), intent(in)  :: s
@@ -1600,7 +1441,7 @@ module module_int
       ! value of the 'b-vector' equations in a solid part of  !
       ! the earth model.                                      !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(5), intent(in)  :: m
       complex(dpc), dimension(4), intent(in)  :: s
@@ -1623,7 +1464,7 @@ module module_int
       ! a solid region of the earth model into a 2nd order    !
       ! minor vector in a fluid region of the earth model     !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(14), intent(in) :: m1
       complex(dpc), dimension(5), intent(out) :: m2
@@ -1644,7 +1485,7 @@ module module_int
       ! a solid region of the earth model into a 2nd order    !
       ! minor vector in a fluid region of the earth model     !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(5), intent(in) :: m1
       complex(dpc), dimension(2), intent(out) :: m2
@@ -1663,7 +1504,7 @@ module module_int
       ! a fluid region of the earth model into a 3rd  order   !
       ! minor vector in a solid region of the earth model     !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(5), intent(in) :: m1
       complex(dpc), dimension(14), intent(out) :: m2
@@ -1686,7 +1527,7 @@ module module_int
       ! a fluid region of the earth model into a 3rd  order   !
       ! minor vector in a solid region of the earth model     !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(2), intent(in) :: m1
       complex(dpc), dimension(5), intent(out) :: m2
@@ -1708,7 +1549,7 @@ module module_int
       ! routine returns the value of the secular determinant !
       ! of the system.                                       !
       !------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(14), intent(in) :: m1,m2
       complex(dpc), intent(out) :: delta
@@ -1733,7 +1574,7 @@ module module_int
       ! routine returns the value of the secular determinant !
       ! of the system.                                       !
       !------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(5), intent(in) :: m1,m2
       complex(dpc), intent(out) :: delta
@@ -1745,49 +1586,13 @@ module module_int
     end subroutine sph_delta_solid_ngcow
 
 
-    subroutine sph_delta_fluid(m1,m2,delta)
-      !------------------------------------------------------!
-      ! Given the relevent 2nd order minor vectors, this     !
-      ! routine returns the value of the secular determinant !
-      ! of the system.                                       !
-      !------------------------------------------------------!
-      use nrtype
-      implicit none
-      complex(dpc), dimension(5), intent(in) :: m1,m2
-      complex(dpc), intent(out) :: delta
-
-      delta = m1(5)*m2(1)+2.0_dp*m1(2)*m2(2) & 
-              +m1(4)*m2(3)+m1(3)*m2(4)+m1(1)*m2(5)            
-
-      return
-    end subroutine sph_delta_fluid
-
-
-
-    subroutine sph_delta_fluid_ngcow(m1,m2,delta)
-      !------------------------------------------------------!
-      ! Given the relevent 2nd order minor vectors, this     !
-      ! routine returns the value of the secular determinant !
-      ! of the system.                                       !
-      !------------------------------------------------------!
-      use nrtype
-      implicit none
-      complex(dpc), dimension(2), intent(in) :: m1,m2
-      complex(dpc), intent(out) :: delta
-
-      delta=m2(2)*m1(1)-m2(1)*m1(2)
-
-      return
-    end subroutine sph_delta_fluid_ngcow
-
-
 
     subroutine sph_ysol(m,b,y)
       !-------------------------------------------------------!
       ! Given the relevant minor vector and b-vector, this    !
       ! routine returns the y-vector solution to the system   !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(14), intent(in) :: m,b
       complex(dpc), dimension(6), intent(out) :: y
@@ -1822,7 +1627,7 @@ module module_int
       ! Given the relevant minor vector and b-vector, this    !
       ! routine returns the y-vector solution to the system   !
       !-------------------------------------------------------!
-      use nrtype
+      use module_kinds
       implicit none
       complex(dpc), dimension(5), intent(in) :: m
       complex(dpc), dimension(4) :: b
@@ -1849,7 +1654,7 @@ module module_int
       ! This routine integrates the given system of equations   !
       ! through the earth model between the specified  limits.  !
       !---------------------------------------------------------!
-      use nrtype; use module_model
+      use module_kinds; use module_model
       implicit none
       integer(i4b), intent(in) :: i1,i2
       real(dp), intent(in) :: r1,r2
@@ -1857,7 +1662,7 @@ module module_int
       integer(i4b), intent(inout), optional  :: scale
       interface
          subroutine derivs(x,y,dydx)
-           use nrtype
+           use module_kinds
            implicit none
            real(dp), intent(in) :: x
            complex(dpc), dimension(:), intent(in) :: y
@@ -1866,8 +1671,8 @@ module module_int
       end interface
       logical(lgt) :: up
       integer(i4b) :: i,j,num,n
-      real(dp) :: rr,rr1,rr2,h_use,h_did,h_next,h_min,drr
-      complex(dpc), dimension(size(y,1)) :: dydx,yscal
+      real(dp) :: rr,rr1,rr2,drr
+      complex(dpc), dimension(size(y,1)) :: dydx
 
       ! determine direction of integration
       if(r2 > r1) then
@@ -1906,7 +1711,7 @@ module module_int
             do j = 1,n-1
                rr = rr1+(j-1)*drr
                call derivs(rr,y,dydx)
-               call rkck(y,dydx,rr,drr,y,derivs)
+               call rk_step(y,dydx,rr,drr,derivs)
                if(present(scale)) then
                   if(all(abs(y) < tiny)) then
                      scale=scale+1
@@ -1948,7 +1753,7 @@ module module_int
             do j = 1,n-1
                rr = rr1+(j-1)*drr
                call derivs(rr,y,dydx)
-               call rkck(y,dydx,rr,drr,y,derivs)
+               call rk_step(y,dydx,rr,drr,derivs)
                if(present(scale)) then
                   if(all(abs(y) < tiny)) then
                      scale=scale+1
@@ -1966,102 +1771,68 @@ module module_int
 
       return
     end subroutine yint
-    
-    
-    
-
-    subroutine rk4(y,dydx,x,h,yout,derivs)
-      use nrtype; use nrutil, only : assert_eq
-      implicit none
-      complex(dpc), dimension(:), intent(in) :: y,dydx
-      real(dp), intent(in) :: x,h
-      complex(dpc), dimension(:), intent(out) :: yout
-      interface
-         subroutine derivs(x,y,dydx)
-           use nrtype
-           implicit none
-           real(dp), intent(in) :: x
-           complex(dpc), dimension(:), intent(in) :: y
-           complex(dpc), dimension(:), intent(out) :: dydx
-         end subroutine derivs
-      end interface
-      ! Given values for the n variables y and their derivatives dydx known
-      ! at x, use the fourth-order Runge-Kutta method to advance the solution
-      ! over an intervalh and return the incremented variables as yout, which
-      ! need not be a distinct array from y. y, dydx and yout are all of
-      ! length n. The user supplies the subroutine derivs, which returns the
-      ! derivatives dydx at x.
-      ! The routine has been modified putting calculations into double 
-      ! precision and allowing the dependent variables to be complex valued. 
-      integer(i4b) :: ndum
-      real(dp) :: h6,hh,xh
-      complex(dpc), dimension(size(y)) :: dym,dyt,yt
-      ndum=assert_eq(size(y),size(dydx),size(yout),'rk4')
-      hh=h*0.5_dp
-      h6=h/6.0_dp
-      xh=x+hh
-      yt=y+hh*dydx
-      call derivs(xh,yt,dyt)
-      yt=y+hh*dyt
-      call derivs(xh,yt,dym)
-      yt=y+h*dym
-      dym=dyt+dym
-      call derivs(x+h,yt,dyt)
-      yout=y+h6*(dydx+dyt+2.0_dp*dym)
-    return
-  end subroutine rk4
   
 
 
-  subroutine rkck(y,dydx,x,h,yout,derivs)
-    use nrtype; use nrutil, only : assert_eq
+  subroutine rk_step(y,dydx,x,h,derivs)
+    !------------------------------------------------------------!
+    ! Advances the solution y of dy/dx = f(x,y) from x to x+h    !
+    ! using the fifth-order Runge-Kutta scheme of Cash & Karp    !
+    ! (ACM Trans. Math. Softw. 16, 201-222, 1990). On input      !
+    ! dydx holds f(x,y). The embedded fourth-order solution is   !
+    ! not used, so the step is not controlled.                   !
+    !------------------------------------------------------------!
+    use module_kinds
     implicit none
-    complex(dpc), dimension(:), intent(in) :: y,dydx
+    complex(dpc), dimension(:), intent(inout) :: y
+    complex(dpc), dimension(:), intent(in) :: dydx
     real(dp), intent(in) :: x,h
-    complex(dpc), dimension(:), intent(out) :: yout
     interface
        subroutine derivs(x,y,dydx)
-         use nrtype
+         use module_kinds
          implicit none
          real(dp), intent(in) :: x
          complex(dpc), dimension(:), intent(in) :: y
          complex(dpc), dimension(:), intent(inout) :: dydx
        end subroutine derivs
     end interface
-    ! Given values for the n variables y and their derivatives dydx known
-    ! at x, use the fifth order Cash-Karp Runge-Kutta method  to advance
-    ! the solution over an interval h and return the incremented variables
-    ! as yout. Also return as estimate of the local truncation error in
-    ! yout using the embedded fourth order method. The user supplies the 
-    ! subroutine derivs, which returns derivatives dydx at x.
-    integer(i4b) :: ndum
-    complex(dpc), dimension(size(y)) :: ak2,ak3,ak4,ak5,ak6,ytemp
-    real(dp), parameter :: a2=0.2_dp, a3=0.3_dp, a4=0.6_dp, a5=1.0_dp, &
-         a6=0.875_dp, b21=0.2_dp, b31=3.0_dp/40.0_dp, b32=9.0_dp/40.0_dp, &
-         b41=0.3_dp, b42=-0.9_dp, b43=1.2_dp, b51=-11.0_dp/54.0_dp, &
-         b52=2.5_dp, b53=-70.0_dp/27.0_dp, b54=35.0_dp/27.0_dp, & 
-         b61=1631.0_dp/55296.0_dp, b62=175.0_dp/512.0_dp, & 
-         b63=575.0_dp/13824.0_dp, b64=44275.0_dp/110592.0_dp, &
-         b65=253.0_dp/4096.0_dp, c1=37.0_dp/378.0_dp, &
-         c3=250.0_dp/621.0_dp, c4=125.0_dp/594.0_dp, &
-         c6=512.0_dp/1771.0_dp, dc1=c1-2825.0_dp/27648.0_dp, &
-         dc3=c3-18575.0_dp/48384.0_dp, dc4=c4-13525.0_dp/55296.0_dp, &
-         dc5=-277.0_dp/14336.0_dp, dc6=c6-0.25_dp
-    ndum=assert_eq(size(y),size(dydx),size(yout),'rkck')
-    ytemp=y+b21*h*dydx
-    call derivs(x+a2*h,ytemp,ak2)
-    ytemp=y+h*(b31*dydx+b32*ak2)
-    call derivs(x+a3*h,ytemp,ak3)
-    ytemp=y+h*(b41*dydx+b42*ak2+b43*ak3)
-    call derivs(x+a4*h,ytemp,ak4)
-    ytemp=y+h*(b51*dydx+b52*ak2+b53*ak3+b54*ak4)
-    call derivs(x+a5*h,ytemp,ak5)
-    ytemp=y+h*(b61*dydx+b62*ak2+b63*ak3+b64*ak4+b65*ak5)
-    call derivs(x+a6*h,ytemp,ak6)
-    yout=y+h*(c1*dydx+c3*ak3+c4*ak4+c6*ak6)
-    ! estimate error as difference between fourth and fifth order methods
+    integer(i4b), parameter :: ns = 6
+    ! nodes, weights and Runge-Kutta matrix (listed by rows)
+    real(dp), dimension(ns), parameter :: c = &
+         (/0.0_dp,0.2_dp,0.3_dp,0.6_dp,1.0_dp,0.875_dp/)
+    real(dp), dimension(ns), parameter :: b = &
+         (/37.0_dp/378.0_dp,0.0_dp,250.0_dp/621.0_dp, &
+           125.0_dp/594.0_dp,0.0_dp,512.0_dp/1771.0_dp/)
+    real(dp), dimension(ns,ns), parameter :: a = reshape( &
+         (/0.0_dp,0.0_dp,0.0_dp,0.0_dp,0.0_dp,0.0_dp, &
+           0.2_dp,0.0_dp,0.0_dp,0.0_dp,0.0_dp,0.0_dp, &
+           3.0_dp/40.0_dp,9.0_dp/40.0_dp,0.0_dp,0.0_dp,0.0_dp,0.0_dp, &
+           0.3_dp,-0.9_dp,1.2_dp,0.0_dp,0.0_dp,0.0_dp, &
+           -11.0_dp/54.0_dp,2.5_dp,-70.0_dp/27.0_dp,35.0_dp/27.0_dp, &
+           0.0_dp,0.0_dp, &
+           1631.0_dp/55296.0_dp,175.0_dp/512.0_dp,575.0_dp/13824.0_dp, &
+           44275.0_dp/110592.0_dp,253.0_dp/4096.0_dp,0.0_dp/), &
+         (/ns,ns/),order=(/2,1/))
+    integer(i4b) :: i,j
+    complex(dpc), dimension(size(y),ns) :: k
+    complex(dpc), dimension(size(y)) :: sum
+
+    k(:,1) = dydx
+    do i = 2,ns
+       sum = a(i,1)*k(:,1)
+       do j = 2,i-1
+          sum = sum+a(i,j)*k(:,j)
+       end do
+       call derivs(x+c(i)*h,y+h*sum,k(:,i))
+    end do
+    sum = b(1)*k(:,1)
+    do i = 2,ns
+       if(b(i) /= 0.0_dp) sum = sum+b(i)*k(:,i)
+    end do
+    y = y+h*sum
+
     return
-  end subroutine rkck
+  end subroutine rk_step
 
 
 !--------------------------------------------------------!
@@ -2070,7 +1841,7 @@ module module_int
     
     
     subroutine set_l(l_in)
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: l_in
       ll=l_in
@@ -2089,7 +1860,7 @@ module module_int
     end subroutine set_l
   
     subroutine set_omega(omega_in) 
-      use nrtype; use module_model
+      use module_kinds; use module_model
       implicit none
       complex(dpc), intent(in) :: omega_in
       omega   = omega_in
@@ -2102,7 +1873,7 @@ module module_int
     end subroutine set_omega
 
     subroutine set_ats(ats_in)
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: ats_in
       ats  = ats_in 
@@ -2110,7 +1881,7 @@ module module_int
     end subroutine set_ats
     
     subroutine set_layer(il_in)
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: il_in
       il=il_in
@@ -2119,7 +1890,7 @@ module module_int
 
 
     function steps(i1)
-      use nrtype
+      use module_kinds
       use module_model
       implicit none
       real(dp) :: steps

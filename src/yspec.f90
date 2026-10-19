@@ -9,8 +9,7 @@ program yspec
   !================================================================!
   ! Modules used:                                                  !
   !================================================================!
-  use nrtype                                                       !
-  use nrutil                                                       !
+  use module_kinds                                                       !
   use module_util                                                  !
   use module_model                                                 !
   use module_solver                                                !
@@ -23,7 +22,7 @@ program yspec
   !================================================================!
   ! input/output files used:                                       !
   !================================================================!
-  integer(i4b), parameter :: io1=7,io2=8,io3=9                     !
+  integer(i4b), parameter :: io1=7,io2=8                           !
   ! model file name:                                               !
   character(len=256) :: model_file                                 !
   ! parameter file                                                 !
@@ -34,33 +33,29 @@ program yspec
   !================================================================!
   ! variables local to the main program:                           !
   !================================================================!  
-  character(len=10) :: string                                      !
   character(len=256) :: pref_out                                   !
   character(len=256) :: seis_out                                   !
-  character(len=256) :: phi_coef_pref ='phi_coef.out'              !
-  character(len=256) :: phi_coef_out                               !
-  logical(lgt) :: ltmp                                             !  
+  logical(lgt) :: ltmp                                             !
   integer(i4b) :: i,j,k,l,lmin,lmax, &                             !
        nw,ios,i1,i2,is,ir,nt,nr,nout,mex, &                        !
-       qex,m,im,isv,msign,ats_in,grav_switch, &                    !
-       out_switch,cor_switch,phi_coef_switch                       !
+       qex,m,msign,ats_in,grav_switch, &                           !
+       out_switch,cor_switch                                       !
   real(dp) :: wmin,wmax,dw,rr,rs,ep,lons,lats, &                   !
-       zeta,wt,dt,df,t,f11,f12,f21,f22,f,tout,depth_rec, &         !
-       depth_source,sqzm2,sqzm6,sqz,f1,f2,x,xp,xc                  !
+       zeta,dt,df,t,f11,f12,f21,f22,tout,depth_rec, &              !
+       depth_source,f1,f2,x,xp,xc                                  !
   real(dp), dimension(6) :: mm                                     !
   real(dp), dimension(:), allocatable :: latr,lonr,delta, &        !
-       azst,csc,azep                                               !
-  real(dp), dimension(:,:), allocatable :: xl0,xlp1,xlp2,xlp3      !
+       azst,azep                                                   !
   real(dp), dimension(:,:,:), allocatable :: xa,xpa,xca            !
-  complex(dpc) :: w,tmp1,tmp2,ei                                   !
-  complex(dpc), dimension(5) :: ww,vv,uu,pp                        !
+  real(dp) :: tmp1,tmp2                                            !
+  real(dp), dimension(:,:,:), allocatable :: seis                  !
+  complex(dpc) :: w,ei                                             !
+  complex(dpc), dimension(5) :: ww,vv,uu                           !
   complex(dpc), dimension(5,2) :: svt                              !
   complex(dpc), dimension(5,6) :: svs                              !
-  complex(dpc), dimension(:), allocatable :: s0,sm1,sp1,sm2,sp2    !
   complex(dpc), dimension(:), allocatable ::  eia                  !
-  complex(dpc), dimension(2) :: stm2,stm1,stp1,stp2,sr0,ctmp3      !
-  complex(dpc), dimension(4) :: ctmp1,ctmp2                        !  
-  complex(dpc), dimension(6) :: ssm2,ssm1,ss0,ssp1,ssp2            !
+  complex(dpc), dimension(2) :: sr0                                !
+  complex(dpc), dimension(4) :: ctmp1,ctmp2                        !
   complex(dpc), dimension(2,2) :: s2tmp,ytor,yrad,prad             !
   complex(dpc), dimension(4,4) :: s4tmp,ysphng                     !
   complex(dpc), dimension(6,4) :: s6tmp,ysph                       !
@@ -78,11 +73,11 @@ program yspec
   !--------------------------------------------------!
   call get_command_argument(1,param_file)
   inquire(file=trim(param_file),exist=ltmp)
-  if(.not.ltmp) stop 'can''t find parameter file'
+  if(.not.ltmp) error stop 'can''t find parameter file'
 
   open(io1,file=param_file,form='formatted', & 
        action='read',iostat=ios)
-  if(ios /= 0) stop 'problem opening parameter file'
+  if(ios /= 0) error stop 'problem opening parameter file'
 
   ! get the prefix for the output files
   call read_string(io1,pref_out,4)
@@ -91,7 +86,7 @@ program yspec
   call read_string(io1,model_file,2)
   open(io2,file=model_file,form='formatted', & 
        action='read',iostat=ios)
-  if(ios /= 0) stop ' problem opening model file'
+  if(ios /= 0) error stop 'problem opening model file'
   call read_model(io2);
   close(io2)
 
@@ -142,7 +137,6 @@ program yspec
   !     compute epicentral angle and azimuths        !
   !--------------------------------------------------!
   allocate(delta(nr),azst(nr),azep(nr))
-  if(lats == 90.0_dp) lats = 89.98_dp
   do i = 1,nr
      call delaz(latr(i),lonr(i),lats,lons,delta(i),azep(i),azst(i)) 
   end do
@@ -153,16 +147,22 @@ program yspec
   !    compute the required spherical harmonics      !
   !--------------------------------------------------!
   allocate(xa(lmax+1,3,nr),xpa(lmax+1,3,nr),xca(lmax+1,3,nr))
+  ! zero the arrays as the m = 2 entries are not set for l = 1
+  xa  = 0.0_dp
+  xpa = 0.0_dp
+  xca = 0.0_dp
 
   ! calculate all the legendre polynomials
   do i = 1,nr     
      call legendre(delta(i),0,0,xa(1,1:1,i), & 
                                 xpa(1,1:1,i), & 
                                 xca(1,1:1,i))                     
-     call legendre(delta(i),1,1,xa(2,1:2,i), & 
-                                xpa(2,1:2,i), & 
-                                xca(2,1:2,i))                     
-     do l = 2,lmax        
+     if(lmax >= 1) then
+        call legendre(delta(i),1,1,xa(2,1:2,i), &
+                                   xpa(2,1:2,i), &
+                                   xca(2,1:2,i))
+     end if
+     do l = 2,lmax
         call legendre(delta(i),l,2,xa(l+1,:,i), & 
              xpa(l+1,:,i), & 
              xca(l+1,:,i))                     
@@ -198,21 +198,21 @@ program yspec
 
   ! set some more parameters
   dw = twopi_d*df
-  if(i1 == i2) stop 'too few frequency steps'  
+  if(i1 == i2) error stop 'too few frequency steps'  
   wmin=(i1-1)*dw
   wmax=(i2-1)*dw
   nw=i2-i1+1
-  if(nw == 1) stop 'to few frequencies'
+  if(nw == 1) error stop 'too few frequencies'
 
   !--------------------------------------------------!
   ! find layer numbers for the source and receivers  !
   !--------------------------------------------------!
   is=find_radius_index(rs,-1)
-  if(is == 0)  stop ' source not in model!'
-  if(is > nsl) stop ' source in the ocean!'
+  if(is == 0)  error stop 'source not in model'
+  if(is > nsl) error stop 'source in the ocean'
   ir=find_radius_index(rr,-1)
-  if(ir == 0)  stop ' receiver not in model!'
-  if(ir > nsl) stop ' receiver in the ocean!'
+  if(ir == 0)  error stop 'receiver not in model'
+  if(ir > nsl) error stop 'receiver in the ocean'
 
   !----------------------------------------------------!
   !                   solve the equations              !
@@ -252,11 +252,18 @@ program yspec
   do i=1,lmax-lmin+1
 
      l = l+1
-     zeta  = sqrt(real(l*(l+1)))
+     zeta  = sqrt(real(l*(l+1),dp))
      write(6,'(" calculations for l = ",i5,", to go = ",i5)') l,lmax-l+1
      
-     ! start loop over omega
-     wloop: do j=1,nw       
+     ! start loop over omega; the frequencies are independent, and
+     ! each thread writes to distinct rows of ur, ut and up
+     !$omp parallel do schedule(dynamic) default(none) &
+     !$omp shared(l,zeta,nw,nr,wmin,dw,ep,is,ir,rs,rr,mm,grav_switch, &
+     !$omp        out_switch,cor_switch,s2tmp,s4tmp,s6tmp,xa,xpa,xca, &
+     !$omp        eia,ur,ut,up,fic,grav) &
+     !$omp private(w,k,m,x,xp,xc,msign,ei,uu,vv,ww,sr0,yrad,prad, &
+     !$omp         svt,ytor,svs,ysph,ysphng,ctmp1,ctmp2)
+     wloop: do j=1,nw
  
         w=wmin+(j-1)*dw-ii*ep
 
@@ -282,9 +289,16 @@ program yspec
            
 
            if(out_switch == 1) then
-              uu(3) = ii*w*uu(3)              
+              uu(3) = ii*w*uu(3)
            elseif(out_switch == 2) then
-              uu(3) = -w*w*uu(3)              
+              if(cor_switch == 0) then
+                 uu(3) = -w*w*uu(3)
+              else
+                 ! make the free-air correction as for the spheroidal
+                 ! modes; for l = 0 the potential perturbation and the
+                 ! density term in the gravity gradient cancel exactly
+                 uu(3) = -w*w*uu(3)-2.0_dp*grav(ir)*uu(3)/rr
+              end if
            end if
 
            ! sum the spherical harmonic series
@@ -298,43 +312,39 @@ program yspec
            !        toroidal modes          !
            !--------------------------------!
 
-           if(l > 1) then
-           
-              ! get the source vectors
-              call source_vector_tor(l,w,is,rs,mm,svt)
-              
-              ! solve the toroidal equations
-              call tor_solver(l,w,rr,rs,ir,is,s2tmp,ytor)
-              
-              if(out_switch == 1) then
-                 ytor = ii*w*ytor
-              elseif(out_switch == 2) then
-                 ytor = -w*w*ytor
-              end if
-              
-              ! put together the W coefficients
-              ww(:) = (svt(:,1)*ytor(1,1)+svt(:,2)*ytor(1,2))/(zeta*rr)
-              
-              do k = 1,nr             
-                 do m = -2,2
-                    if(m == 0) cycle
-                    if(m >= 0) then
-                       x  =  xa(l+1,m+1,k)
-                       xp = xpa(l+1,m+1,k)
-                       xc = xca(l+1,m+1,k)
-                    else
-                       msign = (-1)**m
-                       x  =  msign*xa(l+1,abs(m)+1,k)
-                       xp = msign*xpa(l+1,abs(m)+1,k)
-                       xc = msign*xca(l+1,abs(m)+1,k)
-                    end if
-                    ei = eia(k)**m                 
-                    ut(j,k) = ut(j,k) + ii*m*ww(m+3)*x*ei              
-                    up(j,k) = up(j,k) - ww(m+3)*xp*ei
-                 end do
-              end do
-              
+           ! get the source vectors
+           call source_vector_tor(l,w,is,rs,mm,svt)
+
+           ! solve the toroidal equations
+           call tor_solver(l,w,rr,rs,ir,is,s2tmp,ytor)
+
+           if(out_switch == 1) then
+              ytor = ii*w*ytor
+           elseif(out_switch == 2) then
+              ytor = -w*w*ytor
            end if
+
+           ! put together the W coefficients
+           ww(:) = (svt(:,1)*ytor(1,1)+svt(:,2)*ytor(1,2))/(zeta*rr)
+
+           do k = 1,nr
+              do m = -2,2
+                 if(m == 0) cycle
+                 if(m >= 0) then
+                    x  =  xa(l+1,m+1,k)
+                    xp = xpa(l+1,m+1,k)
+                    xc = xca(l+1,m+1,k)
+                 else
+                    msign = (-1)**m
+                    x  =  msign*xa(l+1,abs(m)+1,k)
+                    xp = msign*xpa(l+1,abs(m)+1,k)
+                    xc = msign*xca(l+1,abs(m)+1,k)
+                 end if
+                 ei = eia(k)**m
+                 ut(j,k) = ut(j,k) + ii*m*ww(m+3)*xc*ei
+                 up(j,k) = up(j,k) - ww(m+3)*xp*ei
+              end do
+           end do
 
            !------------------------------!
            !        spheroidal modes      !
@@ -420,6 +430,7 @@ program yspec
 
         end if
      end do wloop
+     !$omp end parallel do
      ! end loop over frequency
      
   end do
@@ -429,46 +440,37 @@ program yspec
   !------------------------------------------!
   !   perform inverse Fourier transform      !
   !------------------------------------------!
-  call ifft(nt,i1,i2,df,f11,f12,f21,f22,dt,ur,ut,up)
-  nt = size(ur,1)
-  
+  call ifft(nt,i1,i2,df,f11,f12,f21,f22,dt,ur,ut,up,seis)
+  deallocate(ur,ut,up)
+
   !--------------------------------------------!
-  ! undo the eponential decay and unnormalize  !
+  ! undo the exponential decay and unnormalize !
   ! the time-series                            !
   !--------------------------------------------!
   do i=1,nt
      t = (i-1)*dt
-        ur(i,:)  = ur(i,:)*exp(ep*t)
-        ut(i,:)  = ut(i,:)*exp(ep*t)
-        up(i,:)  = up(i,:)*exp(ep*t)        
+     seis(i,:,:) = seis(i,:,:)*exp(ep*t)
   end do
-
 
   ! dimensionalize the outputs
   if(out_switch == 0) then
-     ur = ur*r_norm
-     ut = ut*r_norm
-     up = up*r_norm     
+     seis = seis*r_norm
   elseif(out_switch == 1) then
-     ur = ur*vel_norm
-     ut = ut*vel_norm
-     up = up*vel_norm     
+     seis = seis*vel_norm
   elseif(out_switch == 2) then
-     ur = ur*acl_norm
-     ut = ut*acl_norm
-     up = up*acl_norm     
+     seis = seis*acl_norm
   end if
 
   !----------------------------------------------------------!
-  ! rotate acceleration vector into geographic Up, North,    !
-  ! East, co-ordinate system                                 !
+  ! rotate the horizontal components into the geographic     !
+  ! North and East directions                                !
   !----------------------------------------------------------!
-  do i = 1,nt
-     do  j = 1,nr
-        tmp1 = ut(i,j) 
-        tmp2 = up(i,j) 
-        ut(i,j) = -tmp1*cos(azep(j))+tmp2*sin(azep(j))
-        up(i,j) =  tmp1*sin(azep(j))+tmp2*cos(azep(j))
+  do j = 1,nr
+     do i = 1,nt
+        tmp1 = seis(i,2,j)
+        tmp2 = seis(i,3,j)
+        seis(i,2,j) = -tmp1*cos(azep(j))+tmp2*sin(azep(j))
+        seis(i,3,j) =  tmp1*sin(azep(j))+tmp2*cos(azep(j))
      end do
   end do
 
@@ -476,14 +478,9 @@ program yspec
   !      write out seismograms to file        !
   !-------------------------------------------!
 
-  nout = nt
-  do i = 1,nt
-     t = (i-1)*dt
-     if(t > tout) then
-        nout = i
-        exit
-     end if
-  end do
+  ! write the samples at times from 0 to tout, allowing for rounding
+  ! when tout is a multiple of the time step
+  nout = min(nt,floor(tout/dt+1.0e-6_dp)+1)
 
   do k = 1,nr
 
@@ -493,8 +490,7 @@ program yspec
      do i=1,nout
         t = (i-1)*dt
         t = t*t_norm
-        write(io1,100) t,real(ur(i,k)),real(ut(i,k)), & 
-             real(up(i,k))
+        write(io1,100) t,seis(i,:,k)
      end do
      close(io1)
 
