@@ -6,7 +6,11 @@ direct radial integration method introduced by Friedrich & Dalkolmo (1995), and 
 
 ## Installation
 
-The code has no dependencies, and requires only a Fortran90 compiler. 
+The code requires a Fortran compiler (e.g. gfortran) and the [FFTW3](https://www.fftw.org) library
+(e.g. the `libfftw3-dev` package), which is used for the transform to the time domain. If CMake does
+not find FFTW3, set `FFTW3_INCLUDE_DIR` and `FFTW3_LIBRARY`. If the compiler supports OpenMP, the
+loop over frequencies is run in parallel; set `-DYSPEC_USE_OPENMP=OFF` to build a serial version. The
+results are identical in either case.
 
 Clone the repository:
 
@@ -20,6 +24,12 @@ Compile the code:
 
 `cmake --build YSpecBuild`
 
+Run the regression tests (optional):
+
+`ctest --test-dir YSpecBuild`
+
+The tests compare the outputs for a few small cases in the `tests` folder with stored references.
+
 ## Running the code
 
 
@@ -27,7 +37,14 @@ The program is run using the command:
 
 `yspec input.in`
 
-where `input.in` is the name of the parameter file. And example of such a file can be found within the `examples` folder within the build directory. 
+where `input.in` is the name of the parameter file. An example of such a file can be found within the `examples` folder within the build directory. 
+
+The number of threads can be set using the environment variable `OMP_NUM_THREADS`.
+
+The parameter file is read by counting lines, so its layout must match the example exactly: two
+header lines, and then each value preceded by exactly one blank line and one comment line. File
+names that contain a `/` must be enclosed in quotes (e.g. `"../models/prem.200"`), as otherwise
+they are truncated at the first `/`.
 
 
 A summary of the input parameters is as follows:
@@ -58,8 +75,8 @@ cases have been carefully benchmarked, but this has not been done for the Cowlin
 to `1` for velocities, and equal to `2` for accelerations. In all cases the outputs are in SI units.
 
 - `potential and tilt corrections` – set equal to `1` to make potential and tilt corrections to the
-spherioidal solutions, and `0` otherwise. Note, if the previous option must be set equal to `2` (i.e.
-to output accelerations) for these corrections to be applied.
+spheroidal and radial solutions, and `0` otherwise. Note that the previous option must be set equal
+to `2` (i.e. to output accelerations) for these corrections to be applied.
 
 - `lmin` – minimum value of spherical harmonic degree `l` used in the calculations – probably should
 always be set equal to `0`.
@@ -87,11 +104,14 @@ Note, however, that some form of low-pass filtering must be done to remover the 
 cut-off of the calculations at the frequency `fmax`.
 
 - `source depth, latitude and longitude` – location of point source (depth in km, angles in de-
-grees).
+grees). Latitudes of the source and receivers are taken to be geographic, and are converted to
+geocentric latitudes using a flattening of about 1/297. A point lying exactly at either pole is
+moved 0.02 degrees away from it so that its azimuths are defined.
 
 - `Mrr , . . . , Mpp` – moment tensor components $M_{rr} , . . . , M_{\phi}$ in Nm refered to the standard spherical
 polar co-ordinate system (r, θ, φ) defined relative to the pole of the model. So, locally the $r$ direction
-is vertically upwards, the $\theta$ direction is south, and the $\phi$ direction is east.
+is vertically upwards, the $\theta$ direction is south, and the $\phi$ direction is east. The source time
+function is a Heaviside step, i.e. the moment tensor switches on at the origin time and stays on.
 
 - `receiver depth` – depth of all the different receivers in km. Note that the receiver can be placed
 below the source. This depth cannot lie within a fluid part of the model.
@@ -117,6 +137,39 @@ format is:
 
 where all outputs are in SI units, and the form of the seismogram (displacement, velocity, or acceler-
 ation) is determined by parameter 5 described above.
+
+## Changes
+
+The following errors have been corrected. Seismograms computed with earlier versions of the code
+will differ, mostly in the horizontal components:
+
+- The toroidal contribution to the horizontal component along the source-receiver great circle used
+  $X_{lm}$ in place of $X_{lm}/\sin\theta$. This component was wrong by an amount that vanishes at an
+  epicentral distance of 90 degrees but grows towards the source and the antipode (e.g. by about 25%
+  of its amplitude at 20 degrees, and by about the size of the signal at 5 degrees).
+- Toroidal modes with $l = 1$ were left out. They change the seismograms by 0.1–1%.
+- The spheroidal source terms left out the imaginary (attenuating) part of the elastic moduli at the
+  source. The error is of order $1/Q$ at the source depth: about 0.03% for a crustal source in PREM, and
+  about 1% for a source in the low-Q zone.
+- The free-air correction was not applied to the radial ($l = 0$) modes when potential and tilt
+  corrections were requested.
+- A receiver at exactly 90 degrees north was placed at the south pole.
+- Several minor issues: degree-to-radian constants were truncated, a few quantities were computed in
+  single precision, some arrays were used before being set, and `lmax = 0` wrote out of bounds.
+- The constant $\pi$ was only accurate to single precision. Through the Fourier transform this caused
+  errors of about $10^{-6}$ of the peak amplitude.
+- The spherical Bessel functions used for the starting values of the integrations have been replaced
+  by a single, accurate continued fraction, and the depth at which the integrations start is now
+  chosen without reference to PREM-specific frequency thresholds and more conservatively. The
+  seismograms now differ from those obtained by starting the integrations at the base of the model
+  by about $10^{-8}$ of their peak values.
+
+The code has also been tidied up. In particular, the routines that were taken from Numerical Recipes,
+whose source code cannot be redistributed, have been replaced, with FFTW now used for the Fourier
+transform, and unused code has been removed. Error conditions now end the program with a non-zero
+exit status, and the output time series run from 0 to the requested length. The remaining
+differences from the outputs of earlier versions are no larger than the accuracy of the numerical
+integrations.
 
 
 

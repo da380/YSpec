@@ -1,6 +1,6 @@
 module module_solver
 
-  use nrtype
+  use module_kinds
   implicit none
 
   ! switch to turn on or off attenuation:
@@ -23,7 +23,7 @@ module module_solver
 
 
     subroutine tor_solver(ll_in,w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -34,8 +34,8 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
       integer(i4b) :: i,i1,scale1,scale2,scale3,ns
-      real(dp) :: rt,rlcon,rmu,rqmu
-      complex(dpc) :: delta,b,clcon,s1,s2
+      real(dp) :: rt
+      complex(dpc) :: delta,b
       complex(dpc), dimension(2) :: y1,y2,y3
       
 
@@ -51,7 +51,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
      
 
@@ -64,8 +64,8 @@ module module_solver
          call tor_start_level(ll,real(omega),is,1,i1)
          if(i1 == is .and. i1 > noc+1) i1 = i1-1
          rt = r(i1)
-         if(rt > rs) then 
-            i1 = rs-1
+         if(rt > rs) then
+            i1 = is-1
             rt = r(i1)
          end if
          if(i1 == noc+1) then
@@ -103,8 +103,8 @@ module module_solver
          call tor_start_level(ll,real(omega),ir,1,i1)
          if(i1 == ir .and. i1 > noc+1) i1 = i1-1
          rt = r(i1)
-         if(rt > rs) then 
-            i1 = rs-1
+         if(rt > rr) then
+            i1 = ir-1
             rt = r(i1)
          end if
          if(i1 == noc+1) then
@@ -153,7 +153,7 @@ module module_solver
       ! m(5) = M_{theta,phi}                                    !
       ! m(6) = M_{phi,phi}                                      !
       !---------------------------------------------------------!
-      use nrtype      
+      use module_kinds      
       use module_model
       use module_spline
       use module_int
@@ -178,9 +178,9 @@ module module_solver
 
 
       ! compute some parameters
-      rlcon = splint_dis_r(r,lcon,lcon_cs,rs,is)
-      rmu   = splint_dis_r(r,mu,mu_cs,rs,is)
-      rqmu  = splint_dis_r(r,qmu,qmu_cs,rs,is)      
+      rlcon = spline_value(r,lcon,lcon_cs,rs,is)
+      rmu   = spline_value(r,mu,mu_cs,rs,is)
+      rqmu  = spline_value(r,qmu,qmu_cs,rs,is)      
       qll = 1.0_dp+rqmu*lno
       clcon = rlcon*qll
 
@@ -223,118 +223,12 @@ module module_solver
     !=======================================================!
     !              Radial mode solver routines              !
     !=======================================================!
-    subroutine rad_solver(w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
-      use module_int; use module_spline
-      use module_start
-      implicit none
-      complex(dpc), intent(in) :: w
-      real(dp), intent(in) :: rs,rr
-      integer(i4b), intent(in) :: ir,is
-      complex(dpc), dimension(:,:), intent(in) :: ss
-      complex(dpc), dimension(:,:), intent(out) :: yout
-      integer(i4b) :: i,i1,scale1,scale2,scale3,ns
-      real(dp) :: rt,rccon,rfcon,rmu,rqmu,rkappa,rqkappa
-      complex(dpc) :: delta,b
-      complex(dpc), dimension(2) :: y1,y2,y3
-
-
-
-      ! set parameters for the integration
-      call set_l(0)
-      call set_omega(w)
-      call set_ats(ats_switch)
-      call rad_steps
-
-
-      ! number of sources
-      ns = size(ss,2)
-
-      if(ns /= size(yout,2)) then
-         stop 'yout too small'
-      end if
-
-
-
-
-
-      scale1=0; scale2=0; scale3=0
-      if(rr >= rs) then
-         ! integrate up to the source
-
-         i1 = 1
-         rt = min(0.1_dp*dr,0.1_dp*r(2))
-         call rad_ystart(i1,rt,y1)
-         call yint(i1,is,rt,rs,y1,rad_derivs,scale1)
-         ! integrate down to the reciever
-         y2(1)=one; y2(2)=zero
-         if(rr /= r(nknot)) then
-            call yint(nknot-1,ir,r(nknot),rr,y2,rad_derivs,scale2)
-         end if
-         ! carry on integration to the source
-         y3=y2
-         if(rs /= rr) then
-            call yint(ir,is,rr,rs,y3,rad_derivs,scale3)
-         end if
-
-         ! compute delta
-         delta=y3(2)*y1(1)-y3(1)*y1(2)
-         if(abs(delta) < 1.0e-100_dp) then
-            delta=zero
-         else
-            delta=one/delta
-         end if
-         ! put the solution together
-         do i = 1,ns
-            b = y1(2)*ss(1,i)-y1(1)*ss(2,i)
-            yout(:,i) = -delta*y2*b
-         end do
-         if(scale3 /= 0) then
-            yout=yout*huge**scale3
-         end if     
-      else
-         ! integrate up to the reciever
-         i1 = 1
-         rt = min(0.1_dp*dr,0.1_dp*r(2))
-         call rad_ystart(i1,rt,y1)
-         call yint(i1,ir,rt,rr,y1,rad_derivs,scale1)
-         ! integrate down to the source
-         y2(1)=one; y2(2)=zero
-         if(rs /= r(nsl)) then
-            call yint(nsl-1,is,r(nsl),rs,y2,rad_derivs,scale2)
-         end if
-         ! carry on integration to the receiver
-         y3=y2
-         if(rr /= rs) then
-            call yint(is,ir,rs,rr,y3,rad_derivs,scale3)
-         end if
-         ! compute delta
-         delta=y3(2)*y1(1)-y3(1)*y1(2)
-         if(abs(delta) < 1.0e-100_dp) then
-            delta=zero
-         else
-            delta=one/delta
-         end if
-         ! put the solution together
-         do i=1,ns
-            b = y2(2)*ss(1,i)-y2(1)*ss(2,i)
-            yout(:,i) = -delta*y1*b
-         end do        
-         if(scale3 /= 0) then
-            do i=1,scale3
-               yout=yout*huge
-            end do
-         end if
-      end if
-      
-      return
-    end subroutine rad_solver
 
 
 
     subroutine rad_solver_ng(w,rr,rs,ir,is,ss,yout)
       ! solves radial equations with no-gravity
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -344,7 +238,7 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
       integer(i4b) :: i,i1,scale1,scale2,scale3,ns
-      real(dp) :: rt,rccon,rfcon,rmu,rqmu,rkappa,rqkappa
+      real(dp) :: rt
       complex(dpc) :: delta,b
       complex(dpc), dimension(2) :: y1,y2,y3
 
@@ -361,7 +255,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
 
@@ -444,7 +338,7 @@ module module_solver
     
 
     subroutine rad_solver_wg(w,rr,rs,ir,is,ss,yout,pout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start      
       implicit none
@@ -454,15 +348,13 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
       complex(dpc), dimension(:,:), intent(out) :: pout
-      integer(i4b) :: i,i1,scale1,scale2,scale3,ns,irr,iss, & 
-           ngrid,ig,j,igt,k
+      integer(i4b) :: i,i1,ns,irr,iss,ngrid,ig
       integer(i4b), dimension(:), allocatable :: igrid
-      real(dp) :: rt,rccon,rfcon,rmu,rqmu,rkappa,rqkappa      
+      real(dp) :: rt
       real(dp), dimension(:), allocatable :: rgrid
       complex(dpc) :: delta,b,ctmp1,ctmp2
-      complex(dpc), dimension(2) :: y1,y2,y3
+      complex(dpc), dimension(2) :: y1,y2
       complex(dpc), dimension(:,:), allocatable :: y1s,y2s,ys
-      complex(dpc), dimension(:), allocatable :: u,u_cs
 
       ! set parameters for the integration
       call set_l(0)
@@ -476,7 +368,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! build the grid for storing the solutions
@@ -574,7 +466,7 @@ module module_solver
       ! m(5) = M_{theta,phi}                                    !
       ! m(6) = M_{phi,phi}                                      !
       !---------------------------------------------------------!
-      use nrtype
+      use module_kinds
       use module_model
       use module_spline
       use module_int
@@ -598,14 +490,14 @@ module module_solver
 
 
       ! compute some parameters
-      rccon    = splint_dis_r(r,ccon,ccon_cs,rs,is)
-      rfcon    = splint_dis_r(r,fcon,fcon_cs,rs,is)
-      rmu      = splint_dis_r(r,mu,mu_cs,rs,is)
-      rkappa   = splint_dis_r(r,kappa,kappa_cs,rs,is)
-      rqmu     = splint_dis_r(r,qmu,qmu_cs,rs,is)     
-      rqkappa  = splint_dis_r(r,qkappa,qkappa_cs,rs,is)           
-      rxa2  = splint_dis_r(r,xa2,xa2_cs,rs,is)           
-      rxlam  = splint_dis_r(r,xlam,xlam_cs,rs,is)           
+      rccon    = spline_value(r,ccon,ccon_cs,rs,is)
+      rfcon    = spline_value(r,fcon,fcon_cs,rs,is)
+      rmu      = spline_value(r,mu,mu_cs,rs,is)
+      rkappa   = spline_value(r,kappa,kappa_cs,rs,is)
+      rqmu     = spline_value(r,qmu,qmu_cs,rs,is)     
+      rqkappa  = spline_value(r,qkappa,qkappa_cs,rs,is)           
+      rxa2  = spline_value(r,xa2,xa2_cs,rs,is)           
+      rxlam  = spline_value(r,xlam,xlam_cs,rs,is)           
 
       
       qaa = 1.0_dp+rxa2*lno
@@ -638,7 +530,7 @@ module module_solver
 
 
     subroutine sph_solver(ll_in,w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -648,9 +540,8 @@ module module_solver
       integer(i4b), intent(in) :: ir,is
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout      
-      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,iq,ns
-      real(dp) :: rt,rsi,rccon,rlcon,rfcon,rmu,rkappa, & 
-           rqmu,rqkappa
+      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,ns
+      real(dp) :: rt
       complex(dpc) :: delta
       complex(dpc), dimension(5) :: mf1,mf2
       complex(dpc), dimension(14) :: ms1,ms2,ms3,b
@@ -661,7 +552,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! set parameters for the integration
@@ -825,7 +716,7 @@ module module_solver
 
 
     subroutine sph_solver_ng(ll_in,w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -836,7 +727,7 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
 
-      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,iq,ns
+      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,ns
       real(dp) :: rt
       complex(dpc) :: delta
       complex(dpc), dimension(4) :: b
@@ -848,7 +739,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! set parameters for the integration
@@ -1012,7 +903,7 @@ module module_solver
 
 
     subroutine sph_solver_cow(ll_in,w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -1023,7 +914,7 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
 
-      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,iq,ns
+      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,ns
       real(dp) :: rt
       complex(dpc) :: delta
       complex(dpc), dimension(4) :: b
@@ -1035,7 +926,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! set parameters for the integration
@@ -1203,7 +1094,7 @@ module module_solver
     subroutine sph_solver_fic(ll_in,w,rr,rs,ir,is,ss,yout)
       ! solves the spheriodal system on the assumption that the 
       ! inner core of the earth model is fluid
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -1213,9 +1104,8 @@ module module_solver
       integer(i4b), intent(in) :: ir,is
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout      
-      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,iq,ns
-      real(dp) :: rt,rsi,rccon,rlcon,rfcon,rmu,rkappa, & 
-           rqmu,rqkappa
+      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,ns
+      real(dp) :: rt
       complex(dpc) :: delta
       complex(dpc), dimension(5) :: mf1,mf2
       complex(dpc), dimension(14) :: ms1,ms2,ms3,b
@@ -1226,7 +1116,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! set parameters for the integration
@@ -1384,7 +1274,7 @@ module module_solver
 
 
     subroutine sph_solver_ng_fic(ll_in,w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -1395,7 +1285,7 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
 
-      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,iq,ns
+      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,ns
       real(dp) :: rt
       complex(dpc) :: delta
       complex(dpc), dimension(4) :: b
@@ -1407,7 +1297,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! set parameters for the integration
@@ -1566,7 +1456,7 @@ module module_solver
 
 
     subroutine sph_solver_cow_fic(ll_in,w,rr,rs,ir,is,ss,yout)
-      use nrtype; use module_model
+      use module_kinds; use module_model
       use module_int; use module_spline
       use module_start
       implicit none
@@ -1577,7 +1467,7 @@ module module_solver
       complex(dpc), dimension(:,:), intent(in) :: ss
       complex(dpc), dimension(:,:), intent(out) :: yout
 
-      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,iq,ns
+      integer(i4b) :: i,i1,scale1,scale2,scale3,scale4,ns
       real(dp) :: rt
       complex(dpc) :: delta
       complex(dpc), dimension(4) :: b
@@ -1589,7 +1479,7 @@ module module_solver
       ns = size(ss,2)
 
       if(ns /= size(yout,2)) then
-         stop 'yout too small'
+         error stop 'yout too small'
       end if
 
       ! set parameters for the integration
@@ -1755,7 +1645,7 @@ module module_solver
       ! m(5) = M_{theta,phi}                                    !
       ! m(6) = M_{phi,phi}                                      !
       !---------------------------------------------------------!
-      use nrtype
+      use module_kinds
       use module_model
       use module_spline
       use module_int
@@ -1768,9 +1658,9 @@ module module_solver
       real(dp), dimension(6), intent(in) :: mm
       complex(dpc), dimension(5,6), intent(out) :: svs
       ! local variables
-      real(dp) :: rlcon,rccon,rfcon,rmu,rqmu,rkappa, & 
-           rqkappa,rxlam,rxa2,qaa,qff,qll
-      complex(dpc) :: clcon,cccon,cfcon 
+      real(dp) :: rlcon,rccon,rfcon,rmu,rqmu,rkappa, &
+           rqkappa,rxlam,rxa2
+      complex(dpc) :: clcon,cccon,cfcon,qaa,qff,qll
 
 
       ! set some paramters
@@ -1780,15 +1670,15 @@ module module_solver
 
 
       ! compute some parameters
-      rlcon    = splint_dis_r(r,lcon,lcon_cs,rs,is)
-      rccon    = splint_dis_r(r,ccon,ccon_cs,rs,is)
-      rfcon    = splint_dis_r(r,fcon,fcon_cs,rs,is)
-      rmu      = splint_dis_r(r,mu,mu_cs,rs,is)
-      rkappa   = splint_dis_r(r,kappa,kappa_cs,rs,is)
-      rqmu     = splint_dis_r(r,qmu,qmu_cs,rs,is)     
-      rqkappa  = splint_dis_r(r,qkappa,qkappa_cs,rs,is)           
-      rxlam    = splint_dis_r(r,xlam,xlam_cs,rs,is)           
-      rxa2    = splint_dis_r(r,xa2,xa2_cs,rs,is)           
+      rlcon    = spline_value(r,lcon,lcon_cs,rs,is)
+      rccon    = spline_value(r,ccon,ccon_cs,rs,is)
+      rfcon    = spline_value(r,fcon,fcon_cs,rs,is)
+      rmu      = spline_value(r,mu,mu_cs,rs,is)
+      rkappa   = spline_value(r,kappa,kappa_cs,rs,is)
+      rqmu     = spline_value(r,qmu,qmu_cs,rs,is)     
+      rqkappa  = spline_value(r,qkappa,qkappa_cs,rs,is)           
+      rxlam    = spline_value(r,xlam,xlam_cs,rs,is)           
+      rxa2    = spline_value(r,xa2,xa2_cs,rs,is)           
 
       qaa = 1.0_dp+rxa2*lno
       qff = 1.0_dp+rxlam*lno
@@ -1853,7 +1743,7 @@ module module_solver
     !===========================================!
 
     subroutine set_ats_switch(ats_switch_in)
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: ats_switch_in      
       ats_switch = real(ats_switch_in)      

@@ -8,7 +8,7 @@ module module_model
   !===============================================================!
 
 
-  use nrtype
+  use module_kinds
   implicit none
 
 
@@ -17,7 +17,6 @@ module module_model
   !===============================================================!
   real(dp), parameter :: r_norm=6.371e+6_dp                       !
   real(dp), parameter :: rho_norm=5.515e+3_dp                     ! 
-  real(dp), parameter :: big=1.e+40_dp                            !
   real(dp), save      :: vel_norm                                 !
   real(dp), save      :: acl_norm                                 !
   real(dp), save      :: fre_norm                                 !
@@ -179,7 +178,7 @@ module module_model
       ! model parameters into the required form for the           !
       ! program.                                                  !
       !===========================================================!
-      use nrtype
+      use module_kinds
       use module_spline
       implicit none
       ! Inputs: 
@@ -274,7 +273,7 @@ module module_model
 
       ! compute p and s wave speeds
       beta=sqrt(mu/rho)
-      alpha=sqrt((kappa+1.3333333333_dp*mu)/rho)
+      alpha=sqrt((kappa+4.0_dp*mu/3.0_dp)/rho)
 
       
 
@@ -310,45 +309,45 @@ module module_model
 
       ! compute some of the cubic spline coefficients 
       do i=1,nlayer
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               rho(layer_index(i,1):layer_index(i,2)), & 
-              big,big,rho_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              rho_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               acon(layer_index(i,1):layer_index(i,2)), & 
-              big,big,acon_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              acon_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               ccon(layer_index(i,1):layer_index(i,2)), & 
-              big,big,ccon_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              ccon_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               fcon(layer_index(i,1):layer_index(i,2)), & 
-              big,big,fcon_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              fcon_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               lcon(layer_index(i,1):layer_index(i,2)), & 
-              big,big,lcon_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              lcon_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               ncon(layer_index(i,1):layer_index(i,2)), & 
-              big,big,ncon_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              ncon_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               kappa(layer_index(i,1):layer_index(i,2)), & 
-              big,big,kappa_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              kappa_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               mu(layer_index(i,1):layer_index(i,2)), & 
-              big,big,mu_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              mu_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               qkappa(layer_index(i,1):layer_index(i,2)), & 
-              big,big,qkappa_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              qkappa_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               qmu(layer_index(i,1):layer_index(i,2)), & 
-              big,big,qmu_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              qmu_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               rat(layer_index(i,1):layer_index(i,2)), & 
-              big,big,rat_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              rat_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               xlam(layer_index(i,1):layer_index(i,2)), & 
-              big,big,xlam_cs(layer_index(i,1):layer_index(i,2)))
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+              xlam_cs(layer_index(i,1):layer_index(i,2)))
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               xa2(layer_index(i,1):layer_index(i,2)), & 
-              big,big,xa2_cs(layer_index(i,1):layer_index(i,2)))
+              xa2_cs(layer_index(i,1):layer_index(i,2)))
       end do
 
 
@@ -357,9 +356,9 @@ module module_model
       xint=r
       intg=r**2*rho
       do i=1,nlayer
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               intg(layer_index(i,1):layer_index(i,2)), & 
-              big,big,qint(layer_index(i,1):layer_index(i,2)))
+              qint(layer_index(i,1):layer_index(i,2)))
       end do
       grav(1)=0.0_dp
       fint=0.0_dp
@@ -372,9 +371,9 @@ module module_model
 
       ! compute cubic spline coefficients for gravity
       do i=1,nlayer
-         call spline(r(layer_index(i,1):layer_index(i,2)), & 
+         call natural_spline(r(layer_index(i,1):layer_index(i,2)), & 
               grav(layer_index(i,1):layer_index(i,2)), & 
-              big,big,grav_cs(layer_index(i,1):layer_index(i,2)))
+              grav_cs(layer_index(i,1):layer_index(i,2)))
       end do
 
 
@@ -390,7 +389,7 @@ module module_model
       ! variable isign is set equal to 1 then the routine         !
       ! deallocates these same arrays.                            !
       !===========================================================!
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: nknot_in
       integer(i4b), intent(in), optional :: isign
@@ -477,7 +476,7 @@ module module_model
       ! parameters used in the main program - it should           !
       ! always be the first routine called at run time.           !
       !===========================================================!
-      use nrtype
+      use module_kinds
       implicit none
       vel_norm=r_norm*sqrt(pi_d*bigg*rho_norm)
       acl_norm=pi_d*bigg*rho_norm*r_norm
@@ -493,12 +492,12 @@ module module_model
 
 
     function intgds(y,iq)
-      use nrtype; use module_spline
+      use module_kinds; use module_spline
       implicit none
       real(dp) :: intgds
       real(dp), intent(in) :: y
       integer(i4b), intent(in) :: iq
-      intgds=splint_dis(xint,intg,qint,y,iq)
+      intgds=spline_value(xint,intg,qint,y,iq)
       return
     end function intgds
 
@@ -509,12 +508,12 @@ module module_model
       ! Numerical integration by Gauss-Legendre quadrature.        !
       ! This routine has been copied from that in minos.           !
       !============================================================!
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: r1,r2
       integer(i4b), intent(in) :: iq
       real(dp), intent(inout) :: fint
-      integer(i4b) :: i,j
+      integer(i4b) :: i
       real(dp),dimension(2), parameter :: &
            w=(/.478628670499366_dp,.236926885056189_dp/),&
            x=(/.538469310105683_dp,.906179845938664_dp/)
@@ -535,7 +534,7 @@ module module_model
     end subroutine gauslv
 
     function find_radius_index(rr,up)
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b) :: find_radius_index
       real(dp), intent(in) :: rr
@@ -546,11 +545,9 @@ module module_model
       else
          iup=1
       end if
-      if(iup /= 1 .and. iup /= -1) stop 'bad input to fri'
-      if(rr < 0.0_dp .or. rr > 1.0_dp) then
-         find_radius_index=0
-         return
-      end if
+      if(iup /= 1 .and. iup /= -1) error stop 'bad input to find_radius_index'
+      find_radius_index=0
+      if(rr < r(1) .or. rr > r(nknot)) return
       do i=1,nknot-1
          if(iup == 1) then
             if(rr == r(i) .and. rr == r(i+1)) then
@@ -576,15 +573,15 @@ module module_model
     end function find_radius_index
 
     subroutine grid_count(drr,rs,rr,ngrid)
-      use nrtype
+      use module_kinds
       implicit none
       real(dp), intent(in) :: drr
       real(dp), intent(in) :: rs
       real(dp), intent(in) :: rr
       integer(i4b), intent(out) :: ngrid
       logical(lgt) :: ls,lr
-      integer(i4b) :: nr,i,j,k
-      real(dp) :: r1,r2,rt,drt
+      integer(i4b) :: nr,i
+      real(dp) :: r1,r2
       
       ! work out how many knots will be in the output
       ngrid = 0
@@ -646,7 +643,7 @@ module module_model
       ! layer in which each radial knot lies, while
       ! the integers is and ir specify which knots
       ! correspond to the source and reciever points
-      use nrtype
+      use module_kinds
       implicit none
       integer(i4b), intent(in) :: ngrid
       real(dp), intent(in) :: drr
@@ -659,7 +656,7 @@ module module_model
 
       logical(lgt) :: ls,lr
       integer(i4b) :: nr,i,j,k
-      real(dp) :: r1,r2,rt,drt
+      real(dp) :: r1,r2,drt
 
 
 
